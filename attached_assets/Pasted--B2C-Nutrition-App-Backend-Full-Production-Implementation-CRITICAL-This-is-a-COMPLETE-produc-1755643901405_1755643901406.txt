@@ -1,0 +1,553 @@
+# B2C Nutrition App Backend - Full Production Implementation
+
+## CRITICAL: This is a COMPLETE production-ready implementation - implement ALL requirements exactly as specified
+
+I need you to build the FULL B2C nutrition app backend as outlined in the attached PRD documents. This is an authenticated recipe platform for the US market with advanced search, personalized feeds, user-generated content, and comprehensive admin features.
+
+## MANDATORY REQUIREMENTS - IMPLEMENT EXACTLY AS SPECIFIED
+
+### 1. TECH STACK (NON-NEGOTIABLE)
+
+**Runtime & Framework:**
+- Node.js 20 LTS with TypeScript
+- Fastify (or Express) with pino structured logging
+- Supabase Postgres 15+ with SQL-first migrations
+- Appwrite JWT authentication per request
+
+**Database Requirements:**
+- Use Postgres Full-Text Search (FTS) with tsvector/tsquery/ts_rank_cd
+- GIN indexes for array fields and FTS
+- Trigger-maintained search fields
+- Row Level Security (RLS) for user-scoped data
+- Materialized views with concurrent refresh
+
+### 2. AUTHENTICATION & AUTHORIZATION (EXACT IMPLEMENTATION)
+
+```typescript
+// JWT verification middleware
+async function verifyAppwriteJWT(request: FastifyRequest) {
+  const jwt = request.headers['x-appwrite-jwt'] as string;
+  if (!jwt) {
+    throw new Error('X-Appwrite-JWT header required');
+  }
+  
+  // Verify JWT with Appwrite
+  const decoded = await appwrite.account.get(jwt);
+  
+  // Check if admin: profile.role='admin' OR member of Admins Team
+  const isAdmin = decoded.profile?.role === 'admin' || 
+    await isTeamMember(decoded.$id, process.env.ADMINS_TEAM_ID);
+  
+  return { userId: decoded.$id, isAdmin };
+}
+
+// Admin impersonation for GET requests only (always audit)
+async function handleImpersonation(request: FastifyRequest) {
+  const actAsUser = request.headers['x-act-as-user'] as string;
+  if (actAsUser && request.method === 'GET' && userContext.isAdmin) {
+    await auditImpersonation(userContext.userId, actAsUser, request.url);
+    return actAsUser; // Use this as effective user_id
+  }
+  return userContext.userId;
+}
+```
+
+### 3. FULL-TEXT SEARCH WITH POSTGRES FTS (CRITICAL)
+
+```sql
+-- Trigger-maintained tsvector for recipes
+CREATE OR REPLACE FUNCTION recipes_update_search()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.search_text := COALESCE(NEW.title, '') || ' ' || 
+                     COALESCE(NEW.description, '') || ' ' ||
+                     array_to_string(NEW.cuisines, ' ') || ' ' ||
+                     array_to_string(NEW.diet_tags, ' ');
+  
+  NEW.tsv := to_tsvector('english', NEW.search_text);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trig_recipes_update_search
+  BEFORE INSERT OR UPDATE ON recipes
+  FOR EACH ROW EXECUTE FUNCTION recipes_update_search();
+
+-- GIN indexes for performance
+CREATE INDEX CONCURRENTLY idx_recipes_tsv ON recipes USING GIN (tsv);
+CREATE INDEX CONCURRENTLY idx_recipes_cuisines ON recipes USING GIN (cuisines);
+CREATE INDEX CONCURRENTLY idx_recipes_diet_tags ON recipes USING GIN (diet_tags);
+CREATE INDEX CONCURRENTLY idx_recipes_allergens ON recipes USING GIN (allergens);
+```
+
+### 4. SEARCH RPC WITH DETERMINISTIC RANKING (EXACT FORMULA)
+
+```sql
+CREATE OR REPLACE FUNCTION search_recipes(
+  q text DEFAULT NULL,
+  diets text[] DEFAULT '{}',
+  cuisines text[] DEFAULT '{}',
+  allergens_exclude text[] DEFAULT '{}',
+  cal_min int DEFAULT NULL,
+  cal_max int DEFAULT NULL,
+  protein_min numeric DEFAULT NULL,
+  sugar_max numeric DEFAULT NULL,
+  sodium_max int DEFAULT NULL,
+  fiber_min numeric DEFAULT NULL,
+  satfat_max numeric DEFAULT NULL,
+  time_max int DEFAULT NULL,
+  difficulty text DEFAULT NULL,
+  meal_type text DEFAULT NULL,
+  lim int DEFAULT 50,
+  offs int DEFAULT 0
+)
+RETURNS TABLE(
+  recipe jsonb,
+  score numeric,
+  reasons text[]
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    to_jsonb(r.*) as recipe,
+    (
+      0.45 * COALESCE(ts_rank_cd(r.tsv, plainto_tsquery('english', q)), 0) +
+      0.25 * diet_match_score(r.diet_tags, diets) +
+      0.10 * cuisine_match_score(r.cuisines, cuisines) +
+      0.10 * recency_score(r.updated_at) +
+      0.10 * popularity_score(p.cooked_30d) -
+      0.10 * repeat_penalty(r.id)
+    ) as score,
+    build_reasons_array(r.*, diets, cuisines, q) as reasons
+  FROM recipes r
+  LEFT JOIN mv_recipe_popularity_30d p ON r.id = p.recipe_id
+  WHERE r.status = 'published'
+    AND r.market_country = 'US'
+    -- Hard constraints (NEVER relax these)
+    AND (diets = '{}' OR r.diet_tags @> diets)
+    AND (allergens_exclude = '{}' OR NOT r.allergens && allergens_exclude)
+    -- Nutrition filters
+    AND (cal_min IS NULL OR r.calories >= cal_min)
+    AND (cal_max IS NULL OR r.calories <= cal_max)
+    AND (protein_min IS NULL OR r.protein_g >= protein_min)
+    AND (sugar_max IS NULL OR r.sugar_g <= sugar_max)
+    AND (sodium_max IS NULL OR r.sodium_mg <= sodium_max)
+    AND (fiber_min IS NULL OR r.fiber_g >= fiber_min)
+    AND (satfat_max IS NULL OR r.saturated_fat_g <= satfat_max)
+    -- Other filters
+    AND (time_max IS NULL OR r.total_time_minutes <= time_max)
+    AND (difficulty IS NULL OR r.difficulty = difficulty)
+    AND (meal_type IS NULL OR r.meal_type = meal_type)
+    -- FTS query if provided
+    AND (q IS NULL OR r.tsv @@ plainto_tsquery('english', q))
+  ORDER BY score DESC, r.updated_at DESC, r.id ASC
+  LIMIT lim OFFSET offs;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+### 5. PERSONALIZED FEED RPC (EXACT IMPLEMENTATION)
+
+```sql
+CREATE OR REPLACE FUNCTION personalized_feed(
+  user_id_param text,
+  lim int DEFAULT 50,
+  offs int DEFAULT 0
+)
+RETURNS TABLE(
+  recipe jsonb,
+  score numeric,
+  reasons text[]
+) AS $$
+DECLARE
+  user_diets text[];
+  user_allergens text[];
+  user_cuisines text[];
+BEGIN
+  -- Get user preferences (implement based on user profile table)
+  SELECT profile_diets, profile_allergens, preferred_cuisines 
+  INTO user_diets, user_allergens, user_cuisines
+  FROM user_profiles WHERE user_id = user_id_param;
+  
+  RETURN QUERY
+  SELECT 
+    to_jsonb(r.*) as recipe,
+    (
+      0.25 * cuisine_preference_score(r.cuisines, user_cuisines) +
+      0.20 * macro_fit_score(r.*, user_id_param) +
+      0.20 * recency_score(r.updated_at) +
+      0.20 * popularity_score(p.cooked_30d) +
+      0.15 * health_nudge_score(r.*) -
+      0.30 * recent_view_penalty(r.id, user_id_param)
+    ) as score,
+    build_feed_reasons(r.*, user_diets, user_cuisines) as reasons
+  FROM recipes r
+  LEFT JOIN mv_recipe_popularity_30d p ON r.id = p.recipe_id
+  WHERE r.status = 'published'
+    AND r.market_country = 'US'
+    -- Hard constraints from user profile
+    AND (user_diets = '{}' OR r.diet_tags @> user_diets)
+    AND (user_allergens = '{}' OR NOT r.allergens && user_allergens)
+    -- Not viewed in last 48 hours
+    AND NOT EXISTS (
+      SELECT 1 FROM recipe_history rh 
+      WHERE rh.user_id = user_id_param 
+        AND rh.recipe_id = r.id 
+        AND rh.event = 'viewed'
+        AND rh.at > NOW() - INTERVAL '48 hours'
+    )
+  ORDER BY score DESC, r.updated_at DESC, r.id ASC
+  LIMIT lim OFFSET offs;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+### 6. MATERIALIZED VIEW WITH CONCURRENT REFRESH (PERFORMANCE CRITICAL)
+
+```sql
+-- Popularity materialized view
+CREATE MATERIALIZED VIEW mv_recipe_popularity_30d AS
+SELECT 
+  recipe_id,
+  COUNT(*) as cooked_30d
+FROM recipe_history 
+WHERE event = 'cooked' 
+  AND at > NOW() - INTERVAL '30 days'
+GROUP BY recipe_id;
+
+-- UNIQUE index required for concurrent refresh
+CREATE UNIQUE INDEX idx_mv_recipe_popularity_recipe_id 
+ON mv_recipe_popularity_30d (recipe_id);
+
+-- Cron job for refresh (Supabase Cron)
+SELECT cron.schedule(
+  'refresh-popularity-mv',
+  '*/5 * * * *', -- Every 5 minutes
+  'REFRESH MATERIALIZED VIEW CONCURRENTLY mv_recipe_popularity_30d;'
+);
+```
+
+### 7. ROW LEVEL SECURITY (RLS) POLICIES
+
+```sql
+-- Enable RLS
+ALTER TABLE saved_recipes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE recipe_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_recipes ENABLE ROW LEVEL SECURITY;
+
+-- Owner-only policies
+CREATE POLICY saved_recipes_owner_only ON saved_recipes
+  USING (user_id = current_setting('app.current_user_id'));
+
+CREATE POLICY recipe_history_owner_only ON recipe_history
+  USING (user_id = current_setting('app.current_user_id'));
+
+CREATE POLICY user_recipes_owner_only ON user_recipes
+  USING (owner_user_id = current_setting('app.current_user_id'));
+```
+
+### 8. IDEMPOTENCY IMPLEMENTATION (ENTERPRISE REQUIREMENT)
+
+```typescript
+async function handleIdempotency(request: FastifyRequest, reply: FastifyReply) {
+  const idempotencyKey = request.headers['idempotency-key'] as string;
+  
+  if (['POST', 'PUT', 'PATCH'].includes(request.method) && !idempotencyKey) {
+    throw new Error('Idempotency-Key header required for state-changing operations');
+  }
+  
+  if (idempotencyKey) {
+    const requestHash = createHash('sha256')
+      .update(JSON.stringify(request.body))
+      .digest('hex');
+    
+    // Check for existing request
+    const existing = await db.query(`
+      SELECT response_status, response_body 
+      FROM idempotency_keys 
+      WHERE key = $1 AND method = $2 AND path = $3
+    `, [idempotencyKey, request.method, request.routeOptions.url]);
+    
+    if (existing.rows[0]) {
+      if (existing.rows[0].request_hash !== requestHash) {
+        return reply.status(409).send({
+          type: 'about:blank',
+          title: 'Conflict',
+          status: 409,
+          detail: 'Idempotency key reused with different request body'
+        });
+      }
+      // Return cached response
+      return reply
+        .status(existing.rows[0].response_status)
+        .send(existing.rows[0].response_body);
+    }
+    
+    // Store new request
+    await db.query(`
+      INSERT INTO idempotency_keys (key, method, path, request_hash, created_at)
+      VALUES ($1, $2, $3, $4, NOW())
+    `, [idempotencyKey, request.method, request.routeOptions.url, requestHash]);
+  }
+}
+```
+
+### 9. RATE LIMITING WITH PROPER HEADERS
+
+```typescript
+// Rate limiting middleware
+async function rateLimitMiddleware(request: FastifyRequest, reply: FastifyReply) {
+  const userId = request.user.userId;
+  const isHeavyWrite = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method);
+  const limit = isHeavyWrite ? 6 : 60; // 6 rpm for writes, 60 rpm for reads
+  const windowMs = 60 * 1000; // 1 minute window
+  
+  const bucket = `${userId}:${isHeavyWrite ? 'write' : 'read'}`;
+  const current = await redis.incr(bucket);
+  
+  if (current === 1) {
+    await redis.expire(bucket, 60);
+  }
+  
+  const remaining = Math.max(0, limit - current);
+  const resetTime = new Date(Date.now() + windowMs);
+  
+  reply.headers({
+    'RateLimit': remaining.toString(),
+    'RateLimit-Policy': `${limit};w=60`,
+    'RateLimit-Reset': resetTime.toISOString()
+  });
+  
+  if (current > limit) {
+    return reply.status(429).send({
+      type: 'about:blank',
+      title: 'Too Many Requests',
+      status: 429,
+      detail: `Rate limit exceeded. ${limit} requests per minute allowed.`
+    });
+  }
+}
+```
+
+### 10. COMPREHENSIVE AUDIT LOGGING (ADMIN COMPLIANCE)
+
+```typescript
+async function auditLog(
+  actorUserId: string,
+  action: string,
+  targetTable: string,
+  targetId: string,
+  before?: any,
+  after?: any,
+  reason?: string,
+  ip?: string,
+  userAgent?: string
+) {
+  await db.query(`
+    INSERT INTO audit_log (
+      at, actor_user_id, action, target_table, target_id,
+      diff, reason, ip, ua
+    ) VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8)
+  `, [
+    actorUserId,
+    action,
+    targetTable,
+    targetId,
+    JSON.stringify({ before, after }),
+    reason,
+    ip,
+    userAgent
+  ]);
+}
+
+// Audit wrapper for admin operations
+function auditedAdminRoute(handler: Function) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    const before = await getCurrentState(request.params.id);
+    const result = await handler(request, reply);
+    const after = await getCurrentState(request.params.id);
+    
+    await auditLog(
+      request.user.userId,
+      `${request.method.toLowerCase()}_${request.routeOptions.url}`,
+      'recipes',
+      request.params.id,
+      before,
+      after,
+      request.body?.reason,
+      request.ip,
+      request.headers['user-agent']
+    );
+    
+    return result;
+  };
+}
+```
+
+## COMPLETE API IMPLEMENTATION REQUIRED
+
+### Core Routes (ALL MUST BE IMPLEMENTED):
+
+```typescript
+// Recipe search and browsing
+app.get('/api/v1/recipes', searchRecipes);
+app.get('/api/v1/recipes/:id', getRecipeDetail);
+
+// Personalized feed
+app.get('/api/v1/feed', getPersonalizedFeed);
+
+// Saves and history
+app.post('/api/v1/recipes/:id/save', toggleSaveRecipe);
+app.get('/api/v1/me/saved', getSavedRecipes);
+app.post('/api/v1/me/history', logRecipeHistory);
+app.get('/api/v1/me/history', getRecipeHistory);
+app.get('/api/v1/me/recently-viewed', getRecentlyViewed);
+app.get('/api/v1/me/most-cooked', getMostCooked);
+
+// User-generated content
+app.post('/api/v1/my-recipes', createUserRecipe);
+app.patch('/api/v1/my-recipes/:id', updateUserRecipe);
+app.post('/api/v1/my-recipes/:id/share', shareUserRecipe);
+app.post('/api/v1/my-recipes/:id/unshare', unshareUserRecipe);
+app.post('/api/v1/my-recipes/:id/submit', submitForReview);
+app.get('/api/v1/r/:share_slug', getSharedRecipe);
+
+// Moderation
+app.post('/api/v1/recipes/:id/report', reportRecipe);
+
+// Admin endpoints
+app.post('/api/v1/admin/recipes', auditedAdminRoute(createCuratedRecipe));
+app.put('/api/v1/admin/recipes/:id', auditedAdminRoute(updateCuratedRecipe));
+app.delete('/api/v1/admin/recipes/:id', auditedAdminRoute(deleteCuratedRecipe));
+app.get('/api/v1/admin/reports', getReports);
+app.post('/api/v1/admin/reports/:id/resolve', auditedAdminRoute(resolveReport));
+app.get('/api/v1/admin/audit', getAuditLog);
+
+// Health endpoints
+app.get('/healthz', healthcheck);
+app.get('/readyz', readiness);
+```
+
+## EXACT DATA MODEL IMPLEMENTATION
+
+All tables must be created exactly as specified in the PRD:
+
+- recipes (curated catalog with full nutrition, FTS, taxonomy arrays)
+- user_recipes (UGC with visibility controls and review workflow)
+- saved_recipes (user saves with RLS)
+- recipe_history (view/cook tracking with RLS)
+- recipe_reports (moderation system)
+- recipe_report_resolutions (admin actions)
+- audit_log (comprehensive admin tracking)
+- idempotency_keys (enterprise reliability)
+- mv_recipe_popularity_30d (performance optimization)
+- All taxonomy tables (tax_allergens, tax_diets, tax_cuisines, tax_flags)
+
+## CRON JOBS AND BACKGROUND PROCESSING
+
+```sql
+-- Materialized view refresh every 5 minutes
+SELECT cron.schedule(
+  'refresh-popularity',
+  '*/5 * * * *',
+  'REFRESH MATERIALIZED VIEW CONCURRENTLY mv_recipe_popularity_30d;'
+);
+
+-- Idempotency key cleanup daily
+SELECT cron.schedule(
+  'cleanup-idempotency',
+  '0 2 * * *',
+  'DELETE FROM idempotency_keys WHERE created_at < NOW() - INTERVAL ''24 hours'';'
+);
+```
+
+## ERROR HANDLING (RFC 9457 PROBLEM DETAILS)
+
+```typescript
+// Global error handler
+app.setErrorHandler((error, request, reply) => {
+  const problemDetail = {
+    type: 'about:blank',
+    title: error.name || 'Internal Server Error',
+    status: error.statusCode || 500,
+    detail: error.message,
+    instance: request.url
+  };
+  
+  if (error.validation) {
+    problemDetail.type = 'https://example.com/validation-error';
+    problemDetail.title = 'Validation Error';
+    problemDetail.errors = error.validation;
+  }
+  
+  reply
+    .status(problemDetail.status)
+    .type('application/problem+json')
+    .send(problemDetail);
+});
+```
+
+## ACCEPTANCE CRITERIA (MUST ALL PASS)
+
+- ✅ All API endpoints return RFC 9457 Problem Details on errors
+- ✅ Rate limiting headers (RateLimit, RateLimit-Policy) on all responses
+- ✅ Allergen exclusion works perfectly (Big-9 including sesame)
+- ✅ Diet filtering uses AND semantics (must match ALL selected diets)
+- ✅ Cuisine filtering uses OR semantics (boost for ANY matching cuisine)
+- ✅ FTS uses tsvector/tsquery with GIN indexes and ts_rank_cd scoring
+- ✅ Personalized feed respects hard constraints (diets/allergens)
+- ✅ History throttling: max 1 'viewed' event per hour per recipe/user
+- ✅ Idempotency: same key + body = same response; different body = 409
+- ✅ RLS policies enforce owner-only access to user data
+- ✅ Admin impersonation only on GET requests and always audited
+- ✅ Materialized view refreshes concurrently without blocking
+- ✅ All admin actions logged in audit_log with before/after states
+- ✅ UGC approval copies to curated recipes with source tracking
+
+## REPOSITORY STRUCTURE
+
+Create exactly this structure:
+```
+/api
+  /src
+    /config (database, appwrite, env vars)
+    /auth (JWT verification, admin checks, impersonation)
+    /middleware (rate limiting, idempotency, audit, error handling)
+    /routes (all API endpoints organized by feature)
+    /services (business logic, search, feed algorithms)
+    /db
+      /migrations (SQL-first, numbered)
+      /triggers (FTS triggers, timestamp triggers)
+      /rpc (search_recipes, personalized_feed functions)
+      /mv (materialized view definitions)
+      /seeds (taxonomy data, sample recipes)
+  /test
+    /unit (business logic, ranking algorithms)
+    /integration (API endpoints, database operations)
+    /e2e (complete user flows)
+/docs
+  API.md (complete endpoint documentation)
+  DEPLOY.md (environment setup, configuration)
+  OPERATIONS.md (monitoring, cron jobs, troubleshooting)
+```
+
+## ENVIRONMENT CONFIGURATION
+
+Required environment variables:
+```
+SUPABASE_URL=your_supabase_url
+SUPABASE_SERVICE_ROLE_KEY=your_service_key
+APPWRITE_ENDPOINT=your_appwrite_endpoint
+APPWRITE_PROJECT_ID=your_project_id
+ADMINS_TEAM_ID=your_admin_team_id
+JWT_AUDIENCE=your_jwt_audience
+JWT_ISSUER=your_jwt_issuer
+RATE_LIMITS_READ_RPM=60
+RATE_LIMITS_WRITE_RPM=6
+```
+
+## DO NOT DELIVER ANYTHING SIMPLIFIED OR INCOMPLETE
+
+This is a production recipe platform that must handle real users, user-generated content, and admin moderation. Every requirement in the PRD must be implemented exactly as specified. The search ranking algorithm, personalized feed logic, audit logging, and security measures are all critical for production use.
+
+If any requirement cannot be implemented, explicitly state what's missing rather than delivering a simplified version. This platform will handle real user data and must meet production standards from day one.
