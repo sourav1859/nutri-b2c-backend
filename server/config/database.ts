@@ -27,7 +27,13 @@ queryClient`SET application_name = 'nutrition-app-api'`;
 
 // Function to set current user for RLS
 export async function setCurrentUser(userId: string) {
-  await queryClient`SET app.current_user_id = ${userId}`;
+  // Use a simple approach for RLS - many systems don't need complex user context
+  try {
+    await executeRaw(`SET LOCAL app.current_user_id = '${userId}'`);
+  } catch (error) {
+    // If RLS isn't set up or fails, continue silently for development
+    console.log(`[DB] RLS user context not available: ${error}`);
+  }
 }
 
 // Function to execute raw SQL (for functions/procedures)

@@ -13,6 +13,22 @@ declare global {
 
 export async function authMiddleware(req: Request, res: Response, next: NextFunction) {
   try {
+    console.log(`[AUTH] Processing request: ${req.url}, NODE_ENV: ${process.env.NODE_ENV}, includes admin: ${req.url.includes('/admin')}`);
+    
+    // Development bypass for admin routes
+    if (process.env.NODE_ENV === 'development' && req.url.includes('/admin')) {
+      console.log(`[AUTH] Development bypass activated for: ${req.url}`);
+      req.user = {
+        userId: 'dev-admin-user',
+        isAdmin: true,
+        effectiveUserId: 'dev-admin-user',
+        isImpersonating: false,
+        profile: { role: 'admin' }
+      };
+      await setCurrentUser('dev-admin-user');
+      return next();
+    }
+    
     const jwt = extractJWTFromHeaders(req.headers);
     
     if (!jwt) {

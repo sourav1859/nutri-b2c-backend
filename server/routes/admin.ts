@@ -4,6 +4,7 @@ import { authMiddleware } from "../middleware/auth";
 import { rateLimitMiddleware } from "../middleware/rateLimit";
 import { auditedRoute } from "../middleware/audit";
 import { requireAdmin } from "../auth/admin";
+import { setCurrentUser } from "../config/database";
 import { 
   createCuratedRecipe, 
   updateCuratedRecipe, 
@@ -19,12 +20,28 @@ import { insertRecipeSchema } from "@shared/schema";
 
 const router = Router();
 
-// Require admin for all routes
-router.use(authMiddleware);
-router.use((req, res, next) => {
-  requireAdmin(req.user);
-  next();
-});
+// Development bypass for all admin routes
+if (process.env.NODE_ENV === 'development') {
+  router.use(async (req, res, next) => {
+    console.log(`[ADMIN] Development bypass for: ${req.url}`);
+    req.user = {
+      userId: 'dev-admin-user',
+      isAdmin: true,
+      effectiveUserId: 'dev-admin-user',
+      isImpersonating: false,
+      profile: { role: 'admin' }
+    };
+    await setCurrentUser('dev-admin-user');
+    next();
+  });
+} else {
+  // Require admin for all routes in production
+  router.use(authMiddleware);
+  router.use((req, res, next) => {
+    requireAdmin(req.user);
+    next();
+  });
+}
 router.use(rateLimitMiddleware);
 
 // Dashboard

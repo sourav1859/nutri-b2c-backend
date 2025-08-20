@@ -90,7 +90,6 @@ export const recipes = pgTable("recipes", {
   sourceType: varchar("source_type").default("curated"), // 'curated', 'user_generated'
   sourceUserId: varchar("source_user_id"), // For UGC approval tracking
 }, (table) => ({
-  tsvIdx: index("idx_recipes_tsv").using("gin", table.tsv),
   cuisinesIdx: index("idx_recipes_cuisines").using("gin", table.cuisines),
   dietTagsIdx: index("idx_recipes_diet_tags").using("gin", table.dietTags),
   allergensIdx: index("idx_recipes_allergens").using("gin", table.allergens),
