@@ -163,7 +163,7 @@ export default function AdminDashboard() {
           </div>
           
           {/* Recent Audit Logs */}
-          <AuditLogTable logs={auditLogs} loading={auditLoading} />
+          <AuditLogTable logs={auditLogs || []} loading={auditLoading} />
           
           {/* Database Operations & Content Moderation */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -239,7 +239,7 @@ export default function AdminDashboard() {
             </Card>
             
             {/* Content Moderation Queue */}
-            <ModerationQueue reports={reports} loading={reportsLoading} />
+            <ModerationQueue reports={reports || []} loading={reportsLoading} />
           </div>
           
           {/* System Health Footer */}

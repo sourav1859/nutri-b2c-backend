@@ -78,19 +78,18 @@ export function Sidebar() {
       </div>
       
       <nav className="flex-1 p-4 space-y-2 scrollbar-thin overflow-y-auto">
-        <Link href="/admin">
-          <a
-            className={cn(
-              "flex items-center space-x-3 px-3 py-2 rounded-lg font-medium",
-              location === "/admin" || location === "/admin/"
-                ? "bg-blue-50 text-blue-600"
-                : "text-gray-700 hover:bg-gray-100"
-            )}
-            data-testid="nav-dashboard"
-          >
-            <LayoutDashboard className="w-5 h-5" />
-            <span>Dashboard</span>
-          </a>
+        <Link 
+          href="/admin"
+          className={cn(
+            "flex items-center space-x-3 px-3 py-2 rounded-lg font-medium",
+            location === "/admin" || location === "/admin/"
+              ? "bg-blue-50 text-blue-600"
+              : "text-gray-700 hover:bg-gray-100"
+          )}
+          data-testid="nav-dashboard"
+        >
+          <LayoutDashboard className="w-5 h-5" />
+          <span>Dashboard</span>
         </Link>
         
         {navSections.map((section) => (
@@ -103,27 +102,27 @@ export function Sidebar() {
               const isActive = location === item.href;
               
               return (
-                <Link key={item.name} href={item.href}>
-                  <a
-                    className={cn(
-                      "flex items-center space-x-3 px-3 py-2 rounded-lg",
-                      isActive
-                        ? "bg-blue-50 text-blue-600"
-                        : "text-gray-700 hover:bg-gray-100"
-                    )}
-                    data-testid={`nav-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
-                  >
-                    <Icon className="w-5 h-5" />
-                    <span>{item.name}</span>
-                    {item.badge && (
-                      <Badge 
-                        variant={item.badgeVariant || "default"}
-                        className="ml-auto"
-                      >
-                        {item.badge}
-                      </Badge>
-                    )}
-                  </a>
+                <Link 
+                  key={item.name} 
+                  href={item.href}
+                  className={cn(
+                    "flex items-center space-x-3 px-3 py-2 rounded-lg",
+                    isActive
+                      ? "bg-blue-50 text-blue-600"
+                      : "text-gray-700 hover:bg-gray-100"
+                  )}
+                  data-testid={`nav-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
+                >
+                  <Icon className="w-5 h-5" />
+                  <span>{item.name}</span>
+                  {item.badge && (
+                    <Badge 
+                      variant={item.badgeVariant || "default"}
+                      className="ml-auto"
+                    >
+                      {item.badge}
+                    </Badge>
+                  )}
                 </Link>
               );
             })}
