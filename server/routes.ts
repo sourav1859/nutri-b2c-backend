@@ -1,0 +1,31 @@
+import type { Express } from "express";
+import { createServer, type Server } from "http";
+import recipesRouter from "./routes/recipes";
+import feedRouter from "./routes/feed";
+import userRouter from "./routes/user";
+import adminRouter from "./routes/admin";
+import healthRouter from "./routes/health";
+import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
+import { idempotencyMiddleware, storeIdempotentResponse } from "./middleware/idempotency";
+
+export async function registerRoutes(app: Express): Promise<Server> {
+  // Global middleware
+  app.use(idempotencyMiddleware);
+  app.use(storeIdempotentResponse);
+  
+  // API routes
+  app.use("/api/v1/recipes", recipesRouter);
+  app.use("/api/v1/feed", feedRouter);
+  app.use("/api/v1/me", userRouter);
+  app.use("/api/v1/admin", adminRouter);
+  
+  // Health checks (no /api prefix)
+  app.use("/", healthRouter);
+  
+  // Error handling
+  app.use(notFoundHandler);
+  app.use(errorHandler);
+
+  const httpServer = createServer(app);
+  return httpServer;
+}
