@@ -1,0 +1,11 @@
+external_id,name,brand,description,category_id,price,currency,unit_size,serving_size,servings_per_container,calories,protein_g,carbs_g,fat_g,fiber_g,sugar_g,sodium_mg,ingredients,allergens,dietary_tags,upc
+SKU001,Organic Quinoa Bowl,HealthyCorp,High-protein quinoa bowl with vegetables,grains,12.99,USD,350g,1 cup,3.5,320,12.5,45.2,8.1,5.8,3.2,480,quinoa|bell peppers|olive oil|sea salt,none,organic|gluten-free|vegan,123456789012
+SKU002,Diabetic-Friendly Oatmeal,GoodEats,Low-sugar steel-cut oats with cinnamon,breakfast,8.99,USD,454g,1/2 cup,9,150,5.0,27.0,3.0,8.0,1.0,125,steel-cut oats|cinnamon|stevia,none,diabetic-friendly|low-sugar|high-fiber,123456789013
+SKU003,Heart-Healthy Salmon,PureFish,Wild-caught salmon rich in omega-3s,protein,24.99,USD,454g,4 oz,4,220,25.0,0.0,12.0,0.0,0.0,95,wild salmon,fish,heart-healthy|high-protein|omega-3,123456789014
+SKU004,Low-Sodium Vegetable Soup,SoupCorp,Organic vegetable soup with reduced sodium,soups,6.49,USD,400ml,1 cup,1.6,80,3.0,12.0,2.5,3.0,6.0,180,tomatoes|carrots|celery|onions|herbs,none,organic|low-sodium|vegan,123456789015
+SKU005,Keto Avocado Spread,KetoLife,High-fat avocado spread for ketogenic diets,condiments,7.99,USD,200g,2 tbsp,10,160,2.0,4.0,15.0,4.0,1.0,120,avocados|lime|sea salt,none,keto|high-fat|low-carb,123456789016
+SKU006,Protein Smoothie Mix,FitBlend,Plant-based protein powder blend,supplements,39.99,USD,907g,1 scoop,30,130,25.0,6.0,2.5,3.0,2.0,95,pea protein|rice protein|natural flavors,none,vegan|high-protein|plant-based,123456789017
+SKU007,Gluten-Free Pasta,PurePasta,Brown rice pasta for celiac-safe meals,grains,4.99,USD,340g,2 oz,6,200,4.0,44.0,1.5,2.0,1.0,5,brown rice|water,none,gluten-free|celiac-safe|whole-grain,123456789018
+SKU008,Anti-Inflammatory Turmeric Tea,HerbalWell,Organic turmeric tea with ginger,beverages,12.99,USD,20 bags,1 bag,20,5,0.2,1.0,0.1,0.3,0.5,2,turmeric|ginger|black pepper|honey,none,organic|anti-inflammatory|caffeine-free,123456789019
+SKU009,High-Fiber Chia Seeds,SeedSource,Premium chia seeds packed with fiber,seeds,15.99,USD,454g,2 tbsp,32,140,5.0,12.0,9.0,10.0,0.0,4,chia seeds,none,high-fiber|omega-3|plant-based,123456789020
+SKU010,Lean Turkey Breast,LeanMeats,Organic turkey breast for muscle building,protein,18.99,USD,454g,4 oz,4,120,26.0,0.0,1.5,0.0,0.0,85,organic turkey breast,none,organic|high-protein|lean,123456789021
