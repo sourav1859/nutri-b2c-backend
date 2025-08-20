@@ -72,6 +72,10 @@ if (env.NODE_ENV === 'development') {
     } else {
       serveStatic(app);
     }
+    
+    // Add 404 handler after Vite middleware so frontend routing works
+    const { notFoundHandler } = await import("./middleware/errorHandler");
+    app.use(notFoundHandler);
 
     const port = env.PORT;
     server.listen({

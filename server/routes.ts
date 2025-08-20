@@ -22,8 +22,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Health checks (no /api prefix)
   app.use("/", healthRouter);
   
-  // Error handling
-  app.use(notFoundHandler);
+  // Error handling - Note: notFoundHandler will be added after Vite middleware in index.ts
   app.use(errorHandler);
 
   const httpServer = createServer(app);
