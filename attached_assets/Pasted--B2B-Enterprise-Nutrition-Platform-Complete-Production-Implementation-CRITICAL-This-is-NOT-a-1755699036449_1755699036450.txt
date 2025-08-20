@@ -1,0 +1,564 @@
+# B2B Enterprise Nutrition Platform - Complete Production Implementation
+
+## CRITICAL: This is NOT a UI mockup project - implement FULL enterprise backend functionality
+
+Looking at your B2C implementation, you clearly understand how to build production systems. Now I need the SAME level of implementation quality for the B2B platform, but with enterprise-grade multi-tenant architecture.
+
+## MANDATORY: Compare to Your B2C Success
+
+Your B2C platform shows:
+- Real performance metrics and monitoring
+- Functional user content moderation 
+- Working audit logs with actual data
+- Live search analytics and database health
+- Proper authentication and rate limiting
+
+The B2B platform must have IDENTICAL implementation depth with these enterprise features.
+
+## DATABASE ARCHITECTURE (CRITICAL FOR SCALE)
+
+### 1. Multi-Tenant Partitioning Strategy
+
+```sql
+-- LIST partitioning by vendor_id with HASH sub-partitions
+CREATE TABLE products (
+  id uuid PRIMARY KEY,
+  vendor_id uuid NOT NULL,
+  external_id text NOT NULL,
+  name text NOT NULL,
+  brand text NOT NULL,
+  description text,
+  -- ALL fields from PRD Appendix A.1
+  search_tsv tsvector,
+  created_at timestamptz DEFAULT NOW(),
+  updated_at timestamptz DEFAULT NOW()
+) PARTITION BY LIST (vendor_id);
+
+-- Create vendor partitions with HASH sub-partitioning (Products ×16, Customers ×32)
+CREATE TABLE products_vendor_001 PARTITION OF products
+  FOR VALUES IN ('vendor-001-uuid')
+  PARTITION BY HASH (id);
+
+-- 16 hash partitions per vendor for products
+CREATE TABLE products_vendor_001_0 PARTITION OF products_vendor_001
+  FOR VALUES WITH (modulus 16, remainder 0);
+-- Repeat for remainders 1-15
+
+-- Same pattern for customers with 32 hash partitions
+CREATE TABLE customers (
+  -- Customer fields from PRD
+) PARTITION BY LIST (vendor_id);
+
+-- Partition management automation
+CREATE OR REPLACE FUNCTION create_vendor_partitions(vendor_uuid uuid)
+RETURNS void AS $$
+DECLARE
+  i integer;
+BEGIN
+  -- Create products partitions (16 hash)
+  EXECUTE format('CREATE TABLE products_vendor_%s PARTITION OF products FOR VALUES IN (%L) PARTITION BY HASH (id)', 
+    replace(vendor_uuid::text, '-', ''), vendor_uuid);
+  
+  FOR i IN 0..15 LOOP
+    EXECUTE format('CREATE TABLE products_vendor_%s_%s PARTITION OF products_vendor_%s FOR VALUES WITH (modulus 16, remainder %s)',
+      replace(vendor_uuid::text, '-', ''), i, replace(vendor_uuid::text, '-', ''), i);
+  END LOOP;
+  
+  -- Create customers partitions (32 hash)
+  EXECUTE format('CREATE TABLE customers_vendor_%s PARTITION OF customers FOR VALUES IN (%L) PARTITION BY HASH (id)', 
+    replace(vendor_uuid::text, '-', ''), vendor_uuid);
+  
+  FOR i IN 0..31 LOOP
+    EXECUTE format('CREATE TABLE customers_vendor_%s_%s PARTITION OF customers_vendor_%s FOR VALUES WITH (modulus 32, remainder %s)',
+      replace(vendor_uuid::text, '-', ''), i, replace(vendor_uuid::text, '-', ''), i);
+  END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+### 2. TUS Resumable Upload System (5-10GB Files)
+
+```typescript
+// TUS upload endpoint with resumable support
+app.post('/api/v1/ingest/csv', async (req, res) => {
+  const { vendor_id, mode } = req.query;
+  
+  // Create ingestion job
+  const job = await db.query(`
+    INSERT INTO ingestion_jobs (id, vendor_id, mode, status, created_at)
+    VALUES ($1, $2, $3, 'queued', NOW())
+    RETURNING id
+  `, [uuidv4(), vendor_id, mode]);
+  
+  // Generate TUS resumable upload URL with Supabase Storage
+  const { data: uploadUrl, error } = await supabase.storage
+    .from('csv-ingestion')
+    .createSignedUploadUrl(`${vendor_id}/${job.rows[0].id}/data.csv`, {
+      upsert: true,
+      resumable: true,
+      maxFileSize: 10 * 1024 * 1024 * 1024, // 10GB
+      allowedMimeTypes: ['text/csv', 'application/csv']
+    });
+
+  if (error) throw error;
+
+  res.json({
+    job_id: job.rows[0].id,
+    upload_url: uploadUrl,
+    resumable: true,
+    max_size: '10GB'
+  });
+});
+```
+
+### 3. COPY-Based Bulk Loading (2M Rows ≤45min SLO)
+
+```typescript
+// Worker process for CSV ingestion
+async function processCsvIngest(jobId: string) {
+  const startTime = Date.now();
+  
+  try {
+    // 1. Stream from Supabase Storage
+    const { data: fileBuffer } = await supabase.storage
+      .from('csv-ingestion')
+      .download(`${vendor_id}/${jobId}/data.csv`);
+
+    // 2. COPY directly to staging table (fastest bulk loading)
+    const copyQuery = `
+      COPY stg_products (vendor_id, external_id, name, brand, description, 
+        category_id, price, currency, calories, protein_g, carbs_g, fat_g, 
+        fiber_g, sugar_g, sodium_mg, ingredients, allergens, dietary_tags)
+      FROM STDIN WITH (FORMAT CSV, HEADER true, DELIMITER ',', NULL '')
+    `;
+    
+    await db.copyFrom(copyQuery, Readable.from(fileBuffer));
+
+    // 3. Validate and auto-map using synonyms
+    await validateStagingData(jobId);
+    await autoMapHeaders(jobId);
+
+    // 4. MERGE to live partitions in 100k-250k batches
+    const batchSize = 100000;
+    let offset = 0;
+    let totalProcessed = 0;
+
+    while (true) {
+      const result = await db.query(`
+        WITH batch AS (
+          SELECT * FROM stg_products 
+          WHERE job_id = $1 
+          AND status = 'validated'
+          LIMIT $2 OFFSET $3
+        )
+        INSERT INTO products (vendor_id, external_id, name, brand, description, 
+          category_id, price, currency, calories, protein_g, carbs_g, fat_g, 
+          fiber_g, sugar_g, sodium_mg, ingredients, allergens, dietary_tags,
+          search_tsv, created_at, updated_at)
+        SELECT vendor_id, external_id, name, brand, description, 
+          category_id, price, currency, calories, protein_g, carbs_g, fat_g, 
+          fiber_g, sugar_g, sodium_mg, ingredients, allergens, dietary_tags,
+          to_tsvector('english', name || ' ' || brand || ' ' || description),
+          NOW(), NOW()
+        FROM batch
+        ON CONFLICT (vendor_id, external_id) 
+        DO UPDATE SET
+          name = EXCLUDED.name,
+          brand = EXCLUDED.brand,
+          description = EXCLUDED.description,
+          price = EXCLUDED.price,
+          updated_at = NOW()
+        RETURNING id
+      `, [jobId, batchSize, offset]);
+
+      if (result.rowCount === 0) break;
+      
+      totalProcessed += result.rowCount;
+      offset += batchSize;
+      
+      // Update job progress
+      await updateJobProgress(jobId, (offset / totalEstimated) * 100);
+    }
+
+    // 5. ANALYZE affected partitions (CRITICAL for query performance)
+    await db.query('ANALYZE products');
+    await db.query('ANALYZE customers');
+
+    // 6. Generate errors.csv for failed rows
+    await generateErrorReport(jobId);
+
+    // 7. Emit webhook with HMAC signature
+    await emitWebhook('job.completed', { job_id: jobId, total_processed: totalProcessed });
+
+    const duration = (Date.now() - startTime) / 1000 / 60; // minutes
+    console.log(`Ingestion completed: ${totalProcessed} rows in ${duration} minutes`);
+
+  } catch (error) {
+    await handleJobFailure(jobId, error);
+  }
+}
+```
+
+### 4. Health-Aware Matching Engine (P95 ≤500ms)
+
+```typescript
+// Advanced matching with health constraints and scoring
+app.get('/api/v1/matches/:customerId', async (req, res) => {
+  const { customerId } = req.params;
+  const { k = 20 } = req.query;
+  const vendor_id = req.user.vendor_id;
+
+  // Check cache first
+  const cacheKey = `${vendor_id}:${customerId}:${catalog_version}`;
+  const cached = await redis.get(cacheKey);
+  if (cached) {
+    return res.json(JSON.parse(cached));
+  }
+
+  // Get customer health profile
+  const customer = await db.query(`
+    SELECT c.*, hp.height_cm, hp.weight_kg, hp.age, hp.activity_level,
+           hp.conditions, hp.diet_goals, hp.avoid_allergens, hp.derived_limits
+    FROM customers c
+    LEFT JOIN customer_health_profiles hp ON c.id = hp.customer_id
+    WHERE c.id = $1 AND c.vendor_id = $2
+  `, [customerId, vendor_id]);
+
+  if (!customer.rows[0]) {
+    return res.status(404).json({ error: 'Customer not found' });
+  }
+
+  // Execute health-aware matching RPC
+  const matches = await db.query(`
+    SELECT product_json, health_score, compatibility_reasons
+    FROM match_products_for_customer($1, $2, $3, $4)
+  `, [vendor_id, customerId, k, customer.rows[0].derived_limits]);
+
+  const result = {
+    customer_id: customerId,
+    matches: matches.rows,
+    generated_at: new Date().toISOString(),
+    health_constraints_applied: customer.rows[0].conditions || [],
+    allergen_exclusions: customer.rows[0].avoid_allergens || []
+  };
+
+  // Cache for 15 minutes
+  await redis.setex(cacheKey, 900, JSON.stringify(result));
+
+  res.json(result);
+});
+
+// Health-aware matching SQL function
+CREATE OR REPLACE FUNCTION match_products_for_customer(
+  p_vendor_id uuid,
+  p_customer_id uuid,
+  p_limit int DEFAULT 20,
+  p_derived_limits jsonb DEFAULT '{}'::jsonb
+)
+RETURNS TABLE(
+  product_json jsonb,
+  health_score numeric,
+  compatibility_reasons text[]
+) AS $$
+BEGIN
+  RETURN QUERY
+  WITH customer_profile AS (
+    SELECT conditions, avoid_allergens, diet_goals
+    FROM customer_health_profiles 
+    WHERE customer_id = p_customer_id
+  ),
+  candidate_products AS (
+    SELECT p.*, cp.conditions, cp.avoid_allergens, cp.diet_goals
+    FROM products p
+    CROSS JOIN customer_profile cp
+    WHERE p.vendor_id = p_vendor_id
+      AND p.status = 'active'
+      -- Hard allergen exclusion (NEVER compromise)
+      AND (cp.avoid_allergens IS NULL OR NOT p.allergens && cp.avoid_allergens)
+      -- Hard diet constraints (NEVER compromise)
+      AND (cp.diet_goals IS NULL OR p.dietary_tags @> cp.diet_goals)
+    LIMIT 200 -- Pre-filter for performance
+  )
+  SELECT 
+    to_jsonb(cp.*) as product_json,
+    (
+      -- Health score calculation
+      CASE 
+        WHEN 'diabetes' = ANY(cp.conditions) THEN
+          GREATEST(0, 100 - (cp.sugar_g::numeric / 25 * 100)) + -- Penalize high sugar
+          LEAST(20, cp.fiber_g::numeric * 4) -- Bonus for fiber
+        WHEN 'hypertension' = ANY(cp.conditions) THEN
+          GREATEST(0, 100 - (cp.sodium_mg::numeric / 2300 * 100)) + -- Penalize high sodium
+          LEAST(15, cp.protein_g::numeric / 50 * 15) -- Bonus for protein
+        ELSE 85 -- Base score for no specific conditions
+      END
+    )::numeric as health_score,
+    ARRAY[
+      CASE WHEN cp.fiber_g > 5 THEN 'High fiber content' END,
+      CASE WHEN cp.protein_g > 15 THEN 'Good protein source' END,
+      CASE WHEN cp.sodium_mg < 600 THEN 'Low sodium' END,
+      CASE WHEN cp.sugar_g < 5 THEN 'Low sugar' END
+    ]::text[] as compatibility_reasons
+  FROM candidate_products cp
+  ORDER BY health_score DESC, cp.updated_at DESC
+  LIMIT p_limit;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+### 5. Read Replica Routing (Performance)
+
+```typescript
+// Database connection routing
+const dbConnections = {
+  primary: new Pool({
+    connectionString: process.env.DATABASE_PRIMARY_URL,
+    max: 20,
+    idleTimeoutMillis: 30000
+  }),
+  replica: new Pool({
+    connectionString: process.env.DATABASE_REPLICA_URL,
+    max: 30,
+    idleTimeoutMillis: 30000
+  })
+};
+
+// Route reads to replica, writes to primary
+function getDbConnection(operation: 'read' | 'write', path?: string) {
+  // Heavy read operations go to replica
+  const replicaRoutes = ['/api/v1/search', '/api/v1/analytics', '/api/v1/reports'];
+  
+  if (operation === 'read' && replicaRoutes.some(route => path?.startsWith(route))) {
+    return dbConnections.replica;
+  }
+  
+  return dbConnections.primary;
+}
+
+// Search endpoint with replica routing
+app.get('/api/v1/search/products', async (req, res) => {
+  const db = getDbConnection('read', req.path);
+  
+  // Check replica lag
+  const lagCheck = await db.query('SELECT extract(epoch from now() - pg_last_xact_replay_timestamp()) as lag');
+  const replicationLag = lagCheck.rows[0]?.lag || 0;
+  
+  const results = await db.query(`
+    SELECT * FROM search_products($1, $2, $3, $4, $5)
+  `, [req.query.q, req.query.filters, req.query.vendor_id, req.query.limit, req.query.offset]);
+  
+  res.json({
+    products: results.rows,
+    freshness: replicationLag > 5 ? 'stale' : 'fresh',
+    replica_lag_seconds: replicationLag
+  });
+});
+```
+
+### 6. Comprehensive HIPAA Audit System
+
+```typescript
+// Audit logging for all health data access
+async function auditHealthAccess(
+  actorUserId: string,
+  vendorId: string,
+  action: string,
+  customerId: string,
+  before?: any,
+  after?: any,
+  justification?: string
+) {
+  await db.query(`
+    INSERT INTO audit_log (
+      actor_user_id, actor_role, vendor_id, action, entity, entity_id,
+      before, after, ip, ua, justification, timestamp
+    ) VALUES ($1, $2, $3, $4, 'customer_health_profile', $5, $6, $7, $8, $9, $10, NOW())
+  `, [
+    actorUserId,
+    req.user.role,
+    vendorId,
+    action,
+    customerId,
+    JSON.stringify(before),
+    JSON.stringify(after),
+    req.ip,
+    req.headers['user-agent'],
+    justification
+  ]);
+}
+
+// Health endpoint with mandatory auditing
+app.get('/api/v1/customers/:id/health', async (req, res) => {
+  const { id: customerId } = req.params;
+  const vendor_id = req.user.vendor_id;
+  
+  // Audit the access attempt
+  await auditHealthAccess(
+    req.user.id,
+    vendor_id,
+    'health_profile.accessed',
+    customerId,
+    null,
+    null,
+    'Admin dashboard access'
+  );
+  
+  const profile = await db.query(`
+    SELECT * FROM customer_health_profiles 
+    WHERE customer_id = $1 
+    AND customer_id IN (
+      SELECT id FROM customers WHERE vendor_id = $2
+    )
+  `, [customerId, vendor_id]);
+  
+  res.json(profile.rows[0]);
+});
+```
+
+### 7. Webhook System with HMAC Security
+
+```typescript
+// Webhook delivery with enterprise security
+async function deliverWebhook(
+  vendorId: string,
+  eventType: string,
+  data: any,
+  attempt: number = 1
+) {
+  const endpoints = await db.query(`
+    SELECT url, secret_ref FROM webhook_endpoints 
+    WHERE vendor_id = $1 AND enabled = true
+  `, [vendorId]);
+
+  for (const endpoint of endpoints.rows) {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const payload = JSON.stringify({
+      event_type: eventType,
+      data,
+      timestamp,
+      vendor_id: vendorId
+    });
+
+    // Get secret from Supabase Vault
+    const secret = await getWebhookSecret(endpoint.secret_ref);
+    const signature = createHmac('sha256', secret)
+      .update(`${timestamp}\n${payload}`)
+      .digest('hex');
+
+    try {
+      const response = await fetch(endpoint.url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Timestamp': timestamp.toString(),
+          'X-Signature': `sha256=${signature}`,
+          'X-Idempotency-Key': uuidv4()
+        },
+        body: payload,
+        timeout: 30000
+      });
+
+      await logWebhookDelivery(endpoint.id, eventType, payload, 
+        response.status, null, signature, timestamp);
+
+      if (!response.ok && attempt < 3) {
+        // Exponential backoff retry
+        setTimeout(() => deliverWebhook(vendorId, eventType, data, attempt + 1), 
+          Math.pow(2, attempt) * 1000);
+      }
+    } catch (error) {
+      await logWebhookDelivery(endpoint.id, eventType, payload, 
+        0, error.message, signature, timestamp);
+    }
+  }
+}
+```
+
+## REAL DASHBOARD IMPLEMENTATION
+
+Create functional dashboards like your B2C platform showing:
+
+### Performance Metrics Dashboard
+```typescript
+app.get('/api/v1/metrics/performance', async (req, res) => {
+  const vendor_id = req.user.vendor_id;
+  
+  const metrics = await db.query(`
+    SELECT 
+      AVG(CASE WHEN endpoint = '/api/v1/search' THEN response_time_ms END) as search_p95,
+      AVG(CASE WHEN endpoint = '/api/v1/matches' THEN response_time_ms END) as matches_p95,
+      COUNT(CASE WHEN status_code >= 500 THEN 1 END) as error_count,
+      COUNT(*) as total_requests
+    FROM api_metrics 
+    WHERE vendor_id = $1 AND created_at > NOW() - INTERVAL '1 hour'
+  `, [vendor_id]);
+
+  const ingestionJobs = await db.query(`
+    SELECT status, COUNT(*) as count
+    FROM ingestion_jobs 
+    WHERE vendor_id = $1 AND created_at > NOW() - INTERVAL '24 hours'
+    GROUP BY status
+  `, [vendor_id]);
+
+  res.json({
+    search_api: {
+      p95_latency: metrics.rows[0]?.search_p95 || 0,
+      within_slo: (metrics.rows[0]?.search_p95 || 0) <= 300
+    },
+    matches_api: {
+      p95_latency: metrics.rows[0]?.matches_p95 || 0,
+      within_slo: (metrics.rows[0]?.matches_p95 || 0) <= 500
+    },
+    ingestion_jobs: ingestionJobs.rows.reduce((acc, row) => {
+      acc[row.status] = row.count;
+      return acc;
+    }, {}),
+    system_availability: 99.97 // Calculate from uptime monitoring
+  });
+});
+```
+
+## ACCEPTANCE CRITERIA (ALL MUST WORK)
+
+1. **Database partitioning**: Products and customers properly partitioned by vendor with hash sub-partitions
+2. **TUS uploads**: Can upload 5GB+ CSV files with resume capability
+3. **Bulk loading**: 2M row CSV completes in under 45 minutes using COPY
+4. **Health matching**: P95 response time under 500ms with proper health scoring
+5. **Read replicas**: Search routes to replica with lag monitoring
+6. **Audit logging**: All health data access logged with full context
+7. **Webhooks**: HMAC-SHA256 signed with retry logic and DLQ
+8. **Multi-tenancy**: Complete vendor isolation with proper RBAC
+
+## DELIVERABLE STRUCTURE
+
+```
+/apps/b2b-api
+  /src
+    /auth (Appwrite JWT + RBAC)
+    /db
+      /migrations (partitioning, indexes, triggers, RPCs)
+      /seeds (vendor data, health templates)
+    /routes
+      /ingestion (TUS uploads, CSV processing)
+      /matching (health-aware product matching)
+      /search (FTS with replica routing)
+      /admin (vendor management, audit logs)
+    /workers
+      /csv-processor (COPY-based bulk loading)
+      /webhook-dispatcher (HMAC delivery)
+    /middleware
+      /tenant-isolation (vendor_id scoping)
+      /audit (health data access logging)
+      /rate-limiting (per-vendor limits)
+
+/packages/b2b-shared
+  /types (TypeScript interfaces)
+  /health (BMR/TDEE calculations, condition templates)
+  /security (HMAC, encryption, audit)
+
+/dashboard
+  /components (performance metrics, job monitoring)
+  /pages (vendor management, ingestion, analytics)
+```
+
+Build this with the SAME production quality as your B2C platform. No placeholder pages - every feature must be fully functional with real data, monitoring, and enterprise security.

@@ -4,6 +4,7 @@ import recipesRouter from "./routes/recipes";
 import feedRouter from "./routes/feed";
 import userRouter from "./routes/user";
 import adminRouter from "./routes/admin";
+import b2bRouter from "./routes/b2b";
 import healthRouter from "./routes/health";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { idempotencyMiddleware, storeIdempotentResponse } from "./middleware/idempotency";
@@ -18,6 +19,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/v1/feed", feedRouter);
   app.use("/api/v1/me", userRouter);
   app.use("/api/v1/admin", adminRouter);
+  app.use("/api/v1/b2b", b2bRouter);
   
   // Health checks (no /api prefix)
   app.use("/", healthRouter);

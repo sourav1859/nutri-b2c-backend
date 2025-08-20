@@ -15,6 +15,7 @@ import AdminDatabase from "@/pages/admin-database";
 import AdminAuth from "@/pages/admin-auth";
 import AdminTeams from "@/pages/admin-teams";
 import AdminRateLimits from "@/pages/admin-rate-limits";
+import EnterpriseAdmin from "@/pages/EnterpriseAdmin";
 import Home from "@/pages/home";
 
 function Router() {
@@ -33,6 +34,7 @@ function Router() {
       <Route path="/admin/auth" component={AdminAuth} />
       <Route path="/admin/teams" component={AdminTeams} />
       <Route path="/admin/rate-limits" component={AdminRateLimits} />
+      <Route path="/admin/enterprise" component={EnterpriseAdmin} />
       {/* Fallback to 404 */}
       <Route component={NotFound} />
     </Switch>
