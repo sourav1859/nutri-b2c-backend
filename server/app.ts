@@ -1,38 +1,27 @@
-// server/app.ts
 import express from "express";
 import cors from "cors";
-import { registerRoutes } from "./routes";               // already present in repo
-import { notFoundHandler } from "./middleware/errorHandler";
+import { registerRoutes } from "./routes"; // your existing router
 
-export const app = express();
-app.set("trust proxy", (process.env.TRUST_PROXY ?? "1") === "1");
+const app = express();
 
-// CORS: allow your frontend + localhost
-const WEB_ORIGINS = (process.env.WEB_ORIGINS ??
-  "http://127.0.0.1:3000,http://localhost:3000,https://nutri-b2c-frontend.vercel.app")
-  .split(",")
-  .map(s => s.trim())
-  .filter(Boolean);
+const allowed = (process.env.WEB_ORIGINS ??
+  "http://localhost:3000,https://nutri-b2c-frontend.vercel.app")
+  .split(",").map(s => s.trim());
 
 const corsOptions: cors.CorsOptions = {
   origin(origin, cb) {
-    if (!origin || WEB_ORIGINS.includes(origin) || process.env.CORS_ALLOW_ALL === "1") return cb(null, true);
-    return cb(new Error("Not allowed by CORS"));
+    if (!origin || allowed.includes(origin)) return cb(null, true);
+    cb(new Error("Not allowed by CORS"));
   },
   methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
-  allowedHeaders: ["Content-Type","X-Appwrite-JWT","x-appwrite-jwt","Accept","If-None-Match"],
-  credentials: false,
+  allowedHeaders: ["Content-Type","X-Appwrite-JWT","x-appwrite-jwt"],
   maxAge: 86400,
 };
 
 app.options("*", cors(corsOptions));
 app.use(cors(corsOptions));
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json());
 
-// Mount all existing routers under /api/v1/* (feed, recipes, user, admin, health)
-registerRoutes(app);
-
-// 404 AFTER routes
-app.use(notFoundHandler);
+registerRoutes(app); // must include GET /feed
 
 export default app;
