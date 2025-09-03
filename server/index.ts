@@ -8,6 +8,8 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Request, Response, NextFunction } from "express";
 import { AppError } from "./middleware/errorHandler";
+import app from "./app";
+
 
 // prefer .env.local, fallback to .env (works on Windows too)
 const CWD = process.cwd();
@@ -49,7 +51,6 @@ pool
     process.exit(1);
   });
 
-const app = express();
 app.set("trust proxy", (process.env.TRUST_PROXY ?? "1") === "1");
 
 app.use(
