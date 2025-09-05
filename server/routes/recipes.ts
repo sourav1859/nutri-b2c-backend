@@ -3,7 +3,7 @@ import { z } from "zod";
 import { authMiddleware } from "../middleware/auth";
 import { rateLimitMiddleware } from "../middleware/rateLimit";
 import { searchRecipes, getRecipeDetail, getPopularRecipes } from "../services/search";
-import { toggleSaveRecipe, getSavedRecipes, logRecipeHistory, getRecipeHistory, getRecentlyViewed, getMostCooked, getSharedRecipe } from "../services/recipes";
+import { getUserRecipe, toggleSaveRecipe, getSavedRecipes, logRecipeHistory, getRecipeHistory, getRecentlyViewed, getMostCooked, getSharedRecipe } from "../services/recipes";
 import { insertRecipeHistorySchema, insertRecipeReportSchema } from "@shared/schema";
 import { db } from "../config/database";
 import { recipeReports } from "@shared/schema";
