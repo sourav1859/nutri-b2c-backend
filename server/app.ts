@@ -25,6 +25,7 @@ const corsOptions: cors.CorsOptions = {
     "content-type",
     "accept",
     "x-appwrite-jwt",   // <-- your frontend sends this
+    "x-appwrite-user-id",
     "authorization",
     "idempotency-key",
     "if-none-match",
