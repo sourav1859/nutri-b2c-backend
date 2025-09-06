@@ -40,7 +40,7 @@ export async function upsertHealthFromAppwrite(params: {
     // Mirror strings to Supabase
     height_display: hw.height_display,
     weight_display: hw.weight_display,
-
+    major_conditions: params.health.majorConditions ?? params.health.major_conditions ?? [],
     // Optional numerics if columns exist (see SQL below)
     // height_cm: hw.height_cm,
     // weight_kg: hw.weight_kg,

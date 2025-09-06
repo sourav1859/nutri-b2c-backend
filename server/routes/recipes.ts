@@ -3,7 +3,7 @@ import { z } from "zod";
 import { authMiddleware } from "../middleware/auth";
 import { rateLimitMiddleware } from "../middleware/rateLimit";
 import { searchRecipes, getRecipeDetail, getPopularRecipes } from "../services/search";
-import { getUserRecipe, toggleSaveRecipe, getSavedRecipes, logRecipeHistory, getRecipeHistory, getRecentlyViewed, getMostCooked, getSharedRecipe } from "../services/recipes";
+import { toggleSaveRecipe, getSavedRecipes, logRecipeHistory, getRecipeHistory, getRecentlyViewed, getMostCooked, getSharedRecipe } from "../services/recipes";
 import { insertRecipeHistorySchema, insertRecipeReportSchema } from "@shared/schema";
 import { db } from "../config/database";
 import { recipeReports } from "@shared/schema";
@@ -12,6 +12,9 @@ const num = (v: any) =>
   v === undefined || v === null || v === "" || v === "undefined" || v === "null"
     ? undefined
     : Number(v);
+
+const csv = (v?: any) =>
+  typeof v === "string" && v.trim() ? v.split(",").map(s => s.trim()).filter(Boolean) : undefined;
 
 const router = Router();
 
@@ -23,6 +26,7 @@ router.get("/", rateLimitMiddleware, async (req, res, next) => {
       diets: req.query.diets ? (req.query.diets as string).split(',') : [],
       cuisines: req.query.cuisines ? (req.query.cuisines as string).split(',') : [],
       allergensExclude: req.query.allergens_exclude ? (req.query.allergens_exclude as string).split(',') : [],
+      majorConditions: csv(req.query.major_conditions),
       calMin: req.query.cal_min ? parseInt(req.query.cal_min as string) : undefined,
       calMax: req.query.cal_max ? parseInt(req.query.cal_max as string) : undefined,
       proteinMin: req.query.protein_min ? parseFloat(req.query.protein_min as string) : undefined,
