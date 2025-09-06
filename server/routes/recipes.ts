@@ -8,6 +8,14 @@ import { insertRecipeHistorySchema, insertRecipeReportSchema } from "@shared/sch
 import { db } from "../config/database";
 import { recipeReports } from "@shared/schema";
 
+const num = (v: any) =>
+  v === undefined || v === null || v === "" || v === "undefined" || v === "null"
+    ? undefined
+    : Number(v);
+
+const csv = (v?: any) =>
+  typeof v === "string" && v.trim() ? v.split(",").map(s => s.trim()).filter(Boolean) : undefined;
+
 const router = Router();
 
 // Search and browsing
@@ -18,14 +26,15 @@ router.get("/", rateLimitMiddleware, async (req, res, next) => {
       diets: req.query.diets ? (req.query.diets as string).split(',') : [],
       cuisines: req.query.cuisines ? (req.query.cuisines as string).split(',') : [],
       allergensExclude: req.query.allergens_exclude ? (req.query.allergens_exclude as string).split(',') : [],
+      majorConditions: csv(req.query.major_conditions),
       calMin: req.query.cal_min ? parseInt(req.query.cal_min as string) : undefined,
       calMax: req.query.cal_max ? parseInt(req.query.cal_max as string) : undefined,
       proteinMin: req.query.protein_min ? parseFloat(req.query.protein_min as string) : undefined,
-      sugarMax: req.query.sugar_max ? parseFloat(req.query.sugar_max as string) : undefined,
-      sodiumMax: req.query.sodium_max ? parseInt(req.query.sodium_max as string) : undefined,
+      sugarMax: num(req.query.sugar_max) ? parseFloat(req.query.sugar_max as string) : undefined,
+      sodiumMax: num(req.query.sodium_max) ? parseInt(req.query.sodium_max as string) : undefined,
       fiberMin: req.query.fiber_min ? parseFloat(req.query.fiber_min as string) : undefined,
       satfatMax: req.query.satfat_max ? parseFloat(req.query.satfat_max as string) : undefined,
-      timeMax: req.query.time_max ? parseInt(req.query.time_max as string) : undefined,
+      timeMax: num(req.query.time_max) ? parseInt(req.query.time_max as string) : undefined,
       difficulty: req.query.difficulty as string,
       mealType: req.query.meal_type as string,
       limit: req.query.limit ? parseInt(req.query.limit as string) : 50,

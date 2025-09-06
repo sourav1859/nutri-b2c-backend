@@ -11,6 +11,10 @@ const envSchema = z.object({
   APPWRITE_ENDPOINT: z.string().url(),
   APPWRITE_PROJECT_ID: z.string(),
   ADMINS_TEAM_ID: z.string().optional(),
+
+  // Supabase (server-side)
+  SUPABASE_URL: z.string().url(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string(),
   
   // Rate limiting
   RATE_LIMITS_READ_RPM: z.string().transform(Number).default("60"),

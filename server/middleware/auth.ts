@@ -1,76 +1,94 @@
+// server/middleware/auth.ts
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import type { Request, Response, NextFunction } from "express";
 import { verifyAppwriteJWT, extractJWTFromHeaders } from "../auth/jwt";
 import { handleAdminImpersonation } from "../auth/admin";
 import { setCurrentUser } from "../config/database";
+import { AppError } from "./errorHandler";
 
-declare global {
-  namespace Express {
-    interface Request {
-      user?: any;
-    }
-  }
-}
+/**
+ * Optionally export a light type others can use.
+ * (Safe even if the rest of the codebase doesn't import it.)
+ */
+export type UserContext = {
+  userId: string;
+  effectiveUserId?: string;
+  isAdmin?: boolean;
+  isImpersonating?: boolean;
+  profile?: any;
+};
 
-export async function authMiddleware(req: Request, res: Response, next: NextFunction) {
+/**
+ * Authentication middleware:
+ * - Requires X-Appwrite-JWT
+ * - Verifies JWT and supports admin read-only impersonation
+ * - Populates req.user and DB context (setCurrentUser)
+ * - Converts auth failures into clean 401 Problem Details via AppError
+ */
+export async function authMiddleware(
+  req: Request,
+  _res: Response,
+  next: NextFunction
+) {
   try {
-    console.log(`[AUTH] Processing request: ${req.url}, NODE_ENV: ${process.env.NODE_ENV}, includes admin: ${req.url.includes('/admin')}`);
-    
-    // Development bypass for admin routes
-    if (process.env.NODE_ENV === 'development' && req.url.includes('/admin')) {
-      console.log(`[AUTH] Development bypass activated for: ${req.url}`);
-      req.user = {
-        userId: 'dev-admin-user',
-        isAdmin: true,
-        effectiveUserId: 'dev-admin-user',
-        isImpersonating: false,
-        profile: { role: 'admin' }
-      };
-      await setCurrentUser('dev-admin-user');
-      return next();
-    }
-    
+    // Diagnostics (fixes the old "....env.NODE_ENV" bug)
+    console.log(
+      `[AUTH] ${req.method} ${req.url} (env=${process.env.NODE_ENV}) isAdminRoute=${req.url.includes(
+        "/admin"
+      )}`
+    );
+
     const jwt = extractJWTFromHeaders(req.headers);
-    
     if (!jwt) {
-      return res.status(401).json({
-        type: 'about:blank',
-        title: 'Unauthorized',
-        status: 401,
-        detail: 'X-Appwrite-JWT header required',
-        instance: req.url
-      });
+      return next(
+        new AppError(
+          401,
+          "Unauthorized",
+          "X-Appwrite-JWT header required",
+          req.url
+        )
+      );
     }
-    
-    // Verify JWT and get user context
-    const userContext = await verifyAppwriteJWT(jwt);
-    
-    // Handle admin impersonation
-    const adminContext = await handleAdminImpersonation(req, userContext);
-    
-    // Set current user for RLS
-    await setCurrentUser(adminContext.effectiveUserId);
-    
-    // Attach to request
-    req.user = adminContext;
-    
-    next();
+
+    // Base auth context from JWT
+    const baseCtx = await verifyAppwriteJWT(jwt);
+
+    // Allow admin read-only impersonation (function enforces rules)
+    const ctx = await handleAdminImpersonation(req, baseCtx);
+
+    // Expose to downstream handlers (keep it flexible type-wise)
+    (req as any).user = {
+      ...ctx,
+    } as UserContext;
+
+    // Set effective user for DB/RLS context
+    await setCurrentUser(ctx.effectiveUserId ?? ctx.userId);
+
+    return next();
   } catch (error: any) {
-    res.status(401).json({
-      type: 'about:blank',
-      title: 'Unauthorized',
-      status: 401,
-      detail: error.message || 'Authentication failed',
-      instance: req.url
-    });
+    // Normalize all auth failures to 401
+    return next(
+      new AppError(
+        401,
+        "Unauthorized",
+        error?.message || "Invalid or expired JWT",
+        req.url
+      )
+    );
   }
 }
 
+/**
+ * Optional auth:
+ * - If no JWT, continue unauthenticated
+ * - If JWT present, run full authMiddleware
+ */
 export function optionalAuth(req: Request, res: Response, next: NextFunction) {
   const jwt = extractJWTFromHeaders(req.headers);
-  
-  if (!jwt) {
-    return next();
-  }
-  
-  authMiddleware(req, res, next);
+  if (!jwt) return next();
+  return authMiddleware(req, res, next);
 }
+
+// Some codepaths import a default middleware; keep this for compatibility.
+export default authMiddleware;

@@ -7,6 +7,7 @@ export interface SearchParams {
   diets?: string[];
   cuisines?: string[];
   allergensExclude?: string[];
+  majorConditions?: string[];
   calMin?: number;
   calMax?: number;
   proteinMin?: number;
