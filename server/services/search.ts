@@ -1,5 +1,5 @@
 import { db, executeRaw } from "../config/database.js";
-import { recipes } from "@shared/schema";
+import { recipes } from "../../shared/schema.js";
 import { eq, and, sql } from "drizzle-orm";
 
 export interface SearchParams {

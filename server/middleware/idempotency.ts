@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { createHash } from "crypto";
 import { db } from "../config/database.js";
-import { idempotencyKeys } from "@shared/schema";
+import { idempotencyKeys } from "../../shared/schema.js";
 import { eq, and } from "drizzle-orm";
 
 export async function idempotencyMiddleware(req: Request, res: Response, next: NextFunction) {

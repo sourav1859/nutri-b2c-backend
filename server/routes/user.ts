@@ -6,7 +6,7 @@ import { rateLimitMiddleware } from "../middleware/rateLimit.js";
 import { getSavedRecipes, logRecipeHistory, getRecipeHistory, getRecentlyViewed, getMostCooked } from "../services/recipes.js";
 import { createUserRecipe, updateUserRecipe, shareUserRecipe, unshareUserRecipe, submitForReview, getUserRecipes } from "../services/userContent.js";
 import { getUserProfile, createOrUpdateUserProfile } from "../services/feed.js";
-import { insertRecipeHistorySchema, insertUserRecipeSchema, insertUserProfileSchema } from "@shared/schema";
+import { insertRecipeHistorySchema, insertUserRecipeSchema, insertUserProfileSchema } from "../../shared/schema.js";
 import { AppError } from "../middleware/errorHandler.js";
 import { supabase } from "../config/supabase.js";
 import { executeRaw } from "../config/database.js";

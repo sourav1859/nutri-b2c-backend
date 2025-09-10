@@ -16,7 +16,7 @@ import {
   getDashboardStats
 } from "../services/admin.js";
 import { approveUserRecipe, rejectUserRecipe } from "../services/userContent.js";
-import { insertRecipeSchema } from "@shared/schema";
+import { insertRecipeSchema } from "../../shared/schema.js";
 
 const router = Router();
 

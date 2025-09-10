@@ -4,9 +4,9 @@ import { authMiddleware } from "../middleware/auth.js";
 import { rateLimitMiddleware } from "../middleware/rateLimit.js";
 import { searchRecipes, getRecipeDetail, getPopularRecipes } from "../services/search.js";
 import { toggleSaveRecipe, getSavedRecipes, logRecipeHistory, getRecipeHistory, getRecentlyViewed, getMostCooked, getSharedRecipe } from "../services/recipes.js";
-import { insertRecipeHistorySchema, insertRecipeReportSchema } from "@shared/schema";
+import { insertRecipeHistorySchema, insertRecipeReportSchema } from "../../shared/schema.js";
 import { db } from "../config/database.js";
-import { recipeReports } from "@shared/schema";
+import { recipeReports } from "../../shared/schema.js";
 
 const num = (v: any) =>
   v === undefined || v === null || v === "" || v === "undefined" || v === "null"
