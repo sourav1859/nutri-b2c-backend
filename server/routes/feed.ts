@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { authMiddleware } from "../middleware/auth";
-import { rateLimitMiddleware } from "../middleware/rateLimit";
-import { getPersonalizedFeed, getFeedRecommendations, createOrUpdateUserProfile, getUserProfile } from "../services/feed";
+import { authMiddleware } from "../middleware/auth.js";
+import { rateLimitMiddleware } from "../middleware/rateLimit.js";
+import { getPersonalizedFeed, getFeedRecommendations, createOrUpdateUserProfile, getUserProfile } from "../services/feed.js";
 
 const router = Router();
 

@@ -1,16 +1,16 @@
 import { Router } from "express";
 import type { Request } from "express";
 import { z } from "zod";
-import { authMiddleware } from "../middleware/auth";
-import { rateLimitMiddleware } from "../middleware/rateLimit";
-import { getSavedRecipes, logRecipeHistory, getRecipeHistory, getRecentlyViewed, getMostCooked } from "../services/recipes";
-import { createUserRecipe, updateUserRecipe, shareUserRecipe, unshareUserRecipe, submitForReview, getUserRecipes } from "../services/userContent";
-import { getUserProfile, createOrUpdateUserProfile } from "../services/feed";
+import { authMiddleware } from "../middleware/auth.js";
+import { rateLimitMiddleware } from "../middleware/rateLimit.js";
+import { getSavedRecipes, logRecipeHistory, getRecipeHistory, getRecentlyViewed, getMostCooked } from "../services/recipes.js";
+import { createUserRecipe, updateUserRecipe, shareUserRecipe, unshareUserRecipe, submitForReview, getUserRecipes } from "../services/userContent.js";
+import { getUserProfile, createOrUpdateUserProfile } from "../services/feed.js";
 import { insertRecipeHistorySchema, insertUserRecipeSchema, insertUserProfileSchema } from "@shared/schema";
-import { AppError } from "../middleware/errorHandler";
-import { supabase } from "../config/supabase";
-import { executeRaw } from "../config/database";
-import { deleteAppwriteDocuments, deleteAppwriteUser } from "../services/appwrite";
+import { AppError } from "../middleware/errorHandler.js";
+import { supabase } from "../config/supabase.js";
+import { executeRaw } from "../config/database.js";
+import { deleteAppwriteDocuments, deleteAppwriteUser } from "../services/appwrite.js";
 
 const router = Router();
 

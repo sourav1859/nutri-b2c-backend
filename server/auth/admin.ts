@@ -1,6 +1,6 @@
 import type { Request } from "express";
-import { UserContext } from "./jwt";
-import { auditImpersonation } from "../services/admin";
+import { UserContext } from "./jwt.js";
+import { auditImpersonation } from "../services/admin.js";
 
 export interface AdminContext extends UserContext {
   effectiveUserId: string;

@@ -7,8 +7,8 @@ import { config as loadEnv } from "dotenv";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Request, Response, NextFunction } from "express";
-import { AppError } from "./middleware/errorHandler";
-import app from "./app";
+import { AppError } from "./middleware/errorHandler.js";
+import app from "./app.js";
 
 
 // prefer .env.local, fallback to .env (works on Windows too)

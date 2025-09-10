@@ -1,11 +1,11 @@
 import { Router } from "express";
 import { z } from "zod";
-import { authMiddleware } from "../middleware/auth";
-import { rateLimitMiddleware } from "../middleware/rateLimit";
-import { searchRecipes, getRecipeDetail, getPopularRecipes } from "../services/search";
-import { toggleSaveRecipe, getSavedRecipes, logRecipeHistory, getRecipeHistory, getRecentlyViewed, getMostCooked, getSharedRecipe } from "../services/recipes";
+import { authMiddleware } from "../middleware/auth.js";
+import { rateLimitMiddleware } from "../middleware/rateLimit.js";
+import { searchRecipes, getRecipeDetail, getPopularRecipes } from "../services/search.js";
+import { toggleSaveRecipe, getSavedRecipes, logRecipeHistory, getRecipeHistory, getRecentlyViewed, getMostCooked, getSharedRecipe } from "../services/recipes.js";
 import { insertRecipeHistorySchema, insertRecipeReportSchema } from "@shared/schema";
-import { db } from "../config/database";
+import { db } from "../config/database.js";
 import { recipeReports } from "@shared/schema";
 
 const num = (v: any) =>

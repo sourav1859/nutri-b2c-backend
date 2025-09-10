@@ -1,4 +1,4 @@
-import { db, executeRaw } from "../config/database";
+import { db, executeRaw } from "../config/database.js";
 import { userProfiles, recipes } from "@shared/schema";
 import { eq } from "drizzle-orm";
 

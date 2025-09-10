@@ -1,10 +1,10 @@
 import { Router } from "express";
 import { z } from "zod";
-import { authMiddleware } from "../middleware/auth";
-import { rateLimitMiddleware } from "../middleware/rateLimit";
-import { auditedRoute } from "../middleware/audit";
-import { requireAdmin } from "../auth/admin";
-import { setCurrentUser } from "../config/database";
+import { authMiddleware } from "../middleware/auth.js";
+import { rateLimitMiddleware } from "../middleware/rateLimit.js";
+import { auditedRoute } from "../middleware/audit.js";
+import { requireAdmin } from "../auth/admin.js";
+import { setCurrentUser } from "../config/database.js";
 import { 
   createCuratedRecipe, 
   updateCuratedRecipe, 
@@ -14,8 +14,8 @@ import {
   getAuditLog,
   refreshMaterializedViews,
   getDashboardStats
-} from "../services/admin";
-import { approveUserRecipe, rejectUserRecipe } from "../services/userContent";
+} from "../services/admin.js";
+import { approveUserRecipe, rejectUserRecipe } from "../services/userContent.js";
 import { insertRecipeSchema } from "@shared/schema";
 
 const router = Router();
