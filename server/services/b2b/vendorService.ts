@@ -1,4 +1,4 @@
-import { db, executeRaw, createVendorPartitions } from "../../config/database";
+import { db, executeRaw, createVendorPartitions } from "../../config/database.js";
 import { vendors, vendorUsers } from "@shared/schema";
 import type { InsertVendor, InsertVendorUser } from "@shared/schema";
 import { eq } from "drizzle-orm";

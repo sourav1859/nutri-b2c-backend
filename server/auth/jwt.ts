@@ -1,5 +1,5 @@
-import { account } from "../config/appwrite";
-import { verifyAdminStatus } from "../config/appwrite";
+import { account } from "../config/appwrite.js";
+import { verifyAdminStatus } from "../config/appwrite.js";
 
 export interface UserContext {
   userId: string;

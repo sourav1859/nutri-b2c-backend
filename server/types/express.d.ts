@@ -1,4 +1,4 @@
-import type { UserContext } from "../middleware/auth";
+import type { UserContext } from "../middleware/auth.js";
 
 declare global {
   namespace Express {

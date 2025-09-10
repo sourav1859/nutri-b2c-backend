@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { db, getDbConnection, checkReplicationLag } from "../config/database";
+import { db, getDbConnection, checkReplicationLag } from "../config/database.js";
 import { vendors, vendorUsers, products, customers, ingestionJobs } from "@shared/schema";
 import { 
   insertVendorSchema, 
@@ -16,19 +16,19 @@ import {
   getVendorByDomain, 
   getVendorStats, 
   validateApiKey 
-} from "../services/b2b/vendorService";
+} from "../services/b2b/vendorService.js";
 import {
   createIngestionJob,
   processCsvIngestion,
   getJobStatus,
   getVendorJobs
-} from "../services/b2b/ingestionService";
+} from "../services/b2b/ingestionService.js";
 import {
   findHealthAwareMatches,
   batchHealthMatching,
   clearCustomerCache,
   getMatchingMetrics
-} from "../services/b2b/matchingService";
+} from "../services/b2b/matchingService.js";
 
 const router = Router();
 

@@ -1,8 +1,8 @@
-import { db, executeRaw } from "../config/database";
+import { db, executeRaw } from "../config/database.js";
 import { recipes, userRecipes, recipeReports, recipeReportResolutions, auditLog } from "@shared/schema";
 import { eq, desc, and } from "drizzle-orm";
 import type { InsertRecipe } from "@shared/schema";
-import { auditLogEntry } from "../middleware/audit";
+import { auditLogEntry } from "../middleware/audit.js";
 
 export async function createCuratedRecipe(adminUserId: string, recipeData: InsertRecipe, reason?: string) {
   const recipe = await db.insert(recipes).values({

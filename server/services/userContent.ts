@@ -1,4 +1,4 @@
-import { db } from "../config/database";
+import { db } from "../config/database.js";
 import { userRecipes, recipes } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import type { InsertUserRecipe } from "@shared/schema";

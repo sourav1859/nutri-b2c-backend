@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { upsertProfileFromAppwrite, upsertHealthFromAppwrite } from "../services/supabaseSync";
+import { upsertProfileFromAppwrite, upsertHealthFromAppwrite } from "../services/supabaseSync.js";
 
 const router = Router();
 

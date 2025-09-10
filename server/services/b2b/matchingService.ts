@@ -1,4 +1,4 @@
-import { db, dbRead, getDbConnection, auditHealthDataAccess } from "../../config/database";
+import { db, dbRead, getDbConnection, auditHealthDataAccess } from "../../config/database.js";
 import { products, customers, customerHealthProfiles } from "@shared/schema";
 import { eq, and, sql, desc, asc } from "drizzle-orm";
 import Redis from "ioredis";

@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import { registerRoutes } from "./routes"; // your existing router
+import { registerRoutes } from "./routes.js"; // your existing router
 
 const app = express();
 

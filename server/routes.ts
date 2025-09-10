@@ -1,15 +1,15 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import recipesRouter from "./routes/recipes";
-import feedRouter from "./routes/feed";
-import userRouter from "./routes/user";
-import adminRouter from "./routes/admin";
-import b2bRouter from "./routes/b2b";
-import healthRouter from "./routes/health";
-import syncRouter from "./routes/sync"; 
-import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
-import { idempotencyMiddleware, storeIdempotentResponse } from "./middleware/idempotency";
-import userRecipesRouter from "./routes/userRecipes";
+import recipesRouter from "./routes/recipes.js";
+import feedRouter from "./routes/feed.js";
+import userRouter from "./routes/user.js";
+import adminRouter from "./routes/admin.js";
+import b2bRouter from "./routes/b2b.js";
+import healthRouter from "./routes/health.js";
+import syncRouter from "./routes/sync.js"; 
+import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
+import { idempotencyMiddleware, storeIdempotentResponse } from "./middleware/idempotency.js";
+import userRecipesRouter from "./routes/userRecipes.js";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Global middleware

@@ -1,11 +1,11 @@
-import { db, executeRaw } from "../../config/database";
+import { db, executeRaw } from "../../config/database.js";
 import { products, ingestionJobs } from "@shared/schema";
 import type { InsertProduct, InsertIngestionJob } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { Readable } from "stream";
 import Papa from "papaparse";
-import { calculateHealthScore } from "./vendorService";
+import { calculateHealthScore } from "./vendorService.js";
 
 // TUS resumable upload configuration
 const TUS_CONFIG = {

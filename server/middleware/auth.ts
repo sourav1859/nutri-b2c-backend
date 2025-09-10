@@ -2,10 +2,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import type { Request, Response, NextFunction } from "express";
-import { verifyAppwriteJWT, extractJWTFromHeaders } from "../auth/jwt";
-import { handleAdminImpersonation } from "../auth/admin";
-import { setCurrentUser } from "../config/database";
-import { AppError } from "./errorHandler";
+import { verifyAppwriteJWT, extractJWTFromHeaders } from "../auth/jwt.js";
+import { handleAdminImpersonation } from "../auth/admin.js";
+import { setCurrentUser } from "../config/database.js";
+import { AppError } from "./errorHandler.js";
 
 /**
  * Optionally export a light type others can use.

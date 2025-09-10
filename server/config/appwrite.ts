@@ -1,5 +1,5 @@
 import { Client, Account, Teams } from "appwrite";
-import { env } from "./env";
+import { env } from "./env.js";
 
 if (!env.APPWRITE_ENDPOINT || !env.APPWRITE_PROJECT_ID) {
   throw new Error("Appwrite configuration is required");
