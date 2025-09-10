@@ -1,7 +1,7 @@
 import { db } from "./config/database.js";
-import { users } from "@shared/schema";
+import { users } from "../shared/schema.js";
 import { eq } from "drizzle-orm";
-import type { User, InsertUser } from "@shared/schema";
+import type { User, InsertUser } from "../shared/schema.js";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;

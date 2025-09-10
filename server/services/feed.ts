@@ -1,5 +1,5 @@
 import { db, executeRaw } from "../config/database.js";
-import { userProfiles, recipes } from "@shared/schema";
+import { userProfiles, recipes } from "../../shared/schema.js";
 import { eq } from "drizzle-orm";
 
 export interface FeedResult {

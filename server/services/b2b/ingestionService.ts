@@ -1,6 +1,6 @@
 import { db, executeRaw } from "../../config/database.js";
-import { products, ingestionJobs } from "@shared/schema";
-import type { InsertProduct, InsertIngestionJob } from "@shared/schema";
+import { products, ingestionJobs } from "../../../shared/schema.js";
+import type { InsertProduct, InsertIngestionJob } from "../../../shared/schema.js";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { Readable } from "stream";

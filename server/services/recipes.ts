@@ -1,7 +1,7 @@
 import { db } from "../config/database.js";
-import { recipes, savedRecipes, recipeHistory, userRecipes } from "@shared/schema";
+import { recipes, savedRecipes, recipeHistory, userRecipes } from "../../shared/schema.js";
 import { eq, and, desc } from "drizzle-orm";
-import type { InsertRecipeHistory } from "@shared/schema";
+import type { InsertRecipeHistory } from "../../shared/schema.js";
 import { supabase } from "../config/supabase.js";
 
 type AnyObj = Record<string, any>;

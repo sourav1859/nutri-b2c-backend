@@ -1,6 +1,6 @@
 import { db, executeRaw, createVendorPartitions } from "../../config/database.js";
-import { vendors, vendorUsers } from "@shared/schema";
-import type { InsertVendor, InsertVendorUser } from "@shared/schema";
+import { vendors, vendorUsers } from "../../../shared/schema.js";
+import type { InsertVendor, InsertVendorUser } from "../../../shared/schema.js";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
