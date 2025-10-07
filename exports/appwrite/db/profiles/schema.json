@@ -1,0 +1,74 @@
+{
+  "collection": {
+    "$id": "profiles",
+    "$createdAt": "2025-08-15T16:38:11.560+00:00",
+    "$updatedAt": "2025-08-15T16:38:11.560+00:00",
+    "$permissions": [
+      "create(\"users\")"
+    ],
+    "databaseId": "nutrition_db",
+    "name": "Profiles",
+    "enabled": true,
+    "documentSecurity": true,
+    "attributes": [
+      {
+        "key": "image",
+        "type": "string",
+        "status": "available",
+        "error": "",
+        "required": false,
+        "array": false,
+        "$createdAt": "2025-08-15T16:38:11.882+00:00",
+        "$updatedAt": "2025-08-15T16:38:12.123+00:00",
+        "size": 2048,
+        "default": null,
+        "encrypt": false
+      },
+      {
+        "key": "displayName",
+        "type": "string",
+        "status": "available",
+        "error": "",
+        "required": false,
+        "array": false,
+        "$createdAt": "2025-08-15T17:37:10.373+00:00",
+        "$updatedAt": "2025-08-15T17:37:10.589+00:00",
+        "size": 128,
+        "default": null,
+        "encrypt": false
+      }
+    ],
+    "indexes": []
+  },
+  "attributes": {
+    "total": 2,
+    "attributes": [
+      {
+        "key": "image",
+        "type": "string",
+        "status": "available",
+        "error": "",
+        "required": false,
+        "array": false,
+        "$createdAt": "2025-08-15T16:38:11.882+00:00",
+        "$updatedAt": "2025-08-15T16:38:12.123+00:00",
+        "size": 2048,
+        "default": null,
+        "encrypt": false
+      },
+      {
+        "key": "displayName",
+        "type": "string",
+        "status": "available",
+        "error": "",
+        "required": false,
+        "array": false,
+        "$createdAt": "2025-08-15T17:37:10.373+00:00",
+        "$updatedAt": "2025-08-15T17:37:10.589+00:00",
+        "size": 128,
+        "default": null,
+        "encrypt": false
+      }
+    ]
+  }
+}
