@@ -1,99 +1,71 @@
 // npm i node-appwrite p-limit
 import fs from "node:fs";
 import path from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
 import pLimit from "p-limit";
+import { setTimeout as sleep } from "node:timers/promises";
 import {
-  Client,
-  Users,
-  Teams,
-  Databases,
-  Query,
+  Client, Users, Teams, Databases, Query
 } from "node-appwrite";
 
 /**
- * ENV required:
- *  APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
- *  APPWRITE_PROJECT_ID=<project_id>
- *  APPWRITE_API_KEY=<server_api_key with read scopes>
- *
- * Optional:
- *  DATABASE_ID=nutrition_db
- *  COLLECTION_IDS=profiles,health_profiles      (comma-separated; empty => all)
- *  TEAM_IDS=admins,retailers                    (comma-separated; empty => all)
+ * ENV (source project):
+ *  APPWRITE_ENDPOINT=https://<region>.cloud.appwrite.io/v1
+ *  APPWRITE_PROJECT_ID=<SOURCE_PROJECT_ID>
+ *  APPWRITE_API_KEY=<SOURCE_SERVER_API_KEY>  (scopes: users.read, teams.read, databases.read, documents.read, collections.read, attributes.read, indexes.read, memberships.read)
+ *  DATABASE_ID=<DB_ID_TO_EXPORT>             (e.g., nutrition_db)
  *  OUT_DIR=./exports/appwrite
  */
 
-const ENDPOINT = process.env.APPWRITE_ENDPOINT;
+const ENDPOINT   = process.env.APPWRITE_ENDPOINT;
 const PROJECT_ID = process.env.APPWRITE_PROJECT_ID;
-const API_KEY = process.env.APPWRITE_API_KEY;
-
-const DATABASE_ID = process.env.DATABASE_ID ?? "nutrition_db";
-const COLLECTION_IDS = (process.env.COLLECTION_IDS ?? "")
-  .split(",").map(s => s.trim()).filter(Boolean);
-const TEAM_IDS = (process.env.TEAM_IDS ?? "")
-  .split(",").map(s => s.trim()).filter(Boolean);
-
-const OUT_DIR = process.env.OUT_DIR ?? "./exports/appwrite";
-const CONCURRENCY = 2; // keep modest to avoid 429s
+const API_KEY    = process.env.APPWRITE_API_KEY;
+const DATABASE_ID= process.env.DATABASE_ID ?? "nutrition_db";
+const OUT_DIR    = process.env.OUT_DIR ?? "./exports/appwrite";
+const CONCURRENCY= Number(process.env.CONCURRENCY ?? 2);
 
 if (!ENDPOINT || !PROJECT_ID || !API_KEY) {
   console.error("Missing required env: APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY");
   process.exit(1);
 }
 
-const client = new Client()
-  .setEndpoint(ENDPOINT)
-  .setProject(PROJECT_ID)
-  .setKey(API_KEY);
+const client = new Client().setEndpoint(ENDPOINT).setProject(PROJECT_ID).setKey(API_KEY);
+const users  = new Users(client);
+const teams  = new Teams(client);
+const db     = new Databases(client);
 
-const users = new Users(client);
-const teams = new Teams(client);
-const db = new Databases(client);
+function ensureDir(p){ fs.mkdirSync(p,{recursive:true}); }
+function writeJson(p, obj){ ensureDir(path.dirname(p)); fs.writeFileSync(p, JSON.stringify(obj, null, 2)); }
+function appendNDJSON(p, obj){ ensureDir(path.dirname(p)); fs.appendFileSync(p, JSON.stringify(obj) + "\n"); }
 
-function ensureDir(p) { fs.mkdirSync(p, { recursive: true }); }
-function appendNDJSON(filePath, obj) {
-  fs.appendFileSync(filePath, JSON.stringify(obj) + "\n");
-}
-
-async function withBackoff(fn, opts = { retries: 6, baseMs: 500 }) {
-  let attempt = 0;
-  while (true) {
-    try {
-      return await fn();
-    } catch (err) {
-      const code = err?.code || err?.response?.status;
-      if ((code === 429 || (code >= 500 && code < 600)) && attempt < opts.retries) {
-        const delay = opts.baseMs * Math.pow(2, attempt) + Math.floor(Math.random() * 200);
-        console.warn(`Rate limited/server error (${code}). Backing off ${delay}ms…`);
-        await sleep(delay);
-        attempt++;
-        continue;
+async function backoff(fn, {retries=6, base=500} = {}){
+  for (let i=0;;i++){
+    try { return await fn(); }
+    catch (e) {
+      const code = e?.code || e?.response?.status;
+      if ((code===429 || (code>=500&&code<600)) && i<retries) {
+        const d = base*Math.pow(2,i)+Math.floor(Math.random()*200);
+        console.warn(`Backoff ${code} → ${d}ms`); await sleep(d); continue;
       }
-      console.error("Export failed:", err?.message || err);
-      throw err;
+      throw e;
     }
   }
 }
 
-/* ---------------------- USERS ---------------------- */
-async function exportUsers() {
+/* ---------- Auth: Users ---------- */
+async function exportUsers(){
   console.log("Exporting users…");
-  const outFile = path.join(OUT_DIR, "users.ndjson");
-  ensureDir(path.dirname(outFile));
-  if (fs.existsSync(outFile)) fs.unlinkSync(outFile);
+  const file = path.join(OUT_DIR, "auth", "users.ndjson");
+  if (fs.existsSync(file)) fs.unlinkSync(file);
 
   let cursor;
-  const limit = 100;
-  let count = 0;
-
+  const limit=100;
+  let count=0;
   while (true) {
-    const queries = [Query.limit(limit)];
+    const queries=[Query.limit(limit)];
     if (cursor) queries.push(Query.cursorAfter(cursor));
-    const page = await withBackoff(() => users.list(queries));
-
+    const page = await backoff(()=>users.list(queries));
     for (const u of page.users) {
-      const clean = {
+      appendNDJSON(file, {
         $id: u.$id,
         email: u.email,
         emailVerification: u.emailVerification,
@@ -104,166 +76,135 @@ async function exportUsers() {
         prefs: u.prefs ?? {},
         registration: u.registration,
         accessedAt: u.accessedAt,
-      };
-      appendNDJSON(outFile, clean);
+      });
       count++;
     }
     if (!page.users.length) break;
     cursor = page.users.at(-1).$id;
   }
-  console.log(`Users exported: ${count} -> ${outFile}`);
+  console.log(`Users: ${count}`);
 }
 
-/* ---------------------- TEAMS & MEMBERSHIPS ---------------------- */
-async function exportTeams() {
-  console.log("Exporting teams…");
-  const baseDir = path.join(OUT_DIR, "teams");
-  ensureDir(baseDir);
-
-  const teamsFile = path.join(baseDir, "teams.ndjson");
+/* ---------- Auth: Teams & Memberships ---------- */
+async function exportTeams(){
+  console.log("Exporting teams & memberships…");
+  const teamsFile = path.join(OUT_DIR, "auth", "teams.ndjson");
   if (fs.existsSync(teamsFile)) fs.unlinkSync(teamsFile);
 
-  // Determine which teams to export
-  let targetTeams = [];
-  if (TEAM_IDS.length) {
-    // fetch each explicitly to verify existence
-    for (const id of TEAM_IDS) {
-      const t = await withBackoff(() => teams.get(id));
-      targetTeams.push(t);
-    }
-  } else {
-    // list all teams
-    let cursor;
-    const limit = 100;
-    while (true) {
-      const queries = [Query.limit(limit)];
-      if (cursor) queries.push(Query.cursorAfter(cursor));
-      const page = await withBackoff(() => teams.list(queries));
-      targetTeams.push(...page.teams);
-      if (!page.teams.length) break;
-      cursor = page.teams.at(-1).$id;
-    }
+  let cursor;
+  const limit=100;
+  const teamList = [];
+  while (true) {
+    const queries=[Query.limit(limit)];
+    if (cursor) queries.push(Query.cursorAfter(cursor));
+    const page = await backoff(()=>teams.list(queries));
+    teamList.push(...page.teams);
+    if (!page.teams.length) break;
+    cursor = page.teams.at(-1).$id;
   }
 
-  // Save team records and per-team memberships
-  for (const t of targetTeams) {
-    const teamMeta = {
-      $id: t.$id,
-      name: t.name,
-      total: t.total ?? undefined,
-      prefs: t.prefs ?? {},
-      $createdAt: t.$createdAt,
-      $updatedAt: t.$updatedAt,
-    };
-    appendNDJSON(teamsFile, teamMeta);
+  for (const t of teamList) {
+    appendNDJSON(teamsFile, {
+      $id: t.$id, name: t.name, prefs: t.prefs ?? {}, $createdAt: t.$createdAt, $updatedAt: t.$updatedAt
+    });
 
-    // memberships
-    const teamDir = path.join(baseDir, t.$id);
-    ensureDir(teamDir);
-    const mFile = path.join(teamDir, "memberships.ndjson");
+    const mFile = path.join(OUT_DIR, "auth", "memberships", `${t.$id}.ndjson`);
     if (fs.existsSync(mFile)) fs.unlinkSync(mFile);
 
-    let cursor;
-    const limit = 100;
-    let count = 0;
-
+    let mCursor; let count=0;
     while (true) {
-      const queries = [Query.limit(limit)];
-      if (cursor) queries.push(Query.cursorAfter(cursor));
-      const page = await withBackoff(() => teams.listMemberships(t.$id, queries));
-
-      for (const m of page.memberships ?? page.membership ?? []) {
-        // Normalize fields across Appwrite versions
-        const record = {
-          $id: m.$id,
-          teamId: t.$id,
-          userId: m.userId,
-          // roles can be null/[]; ensure array
+      const q=[Query.limit(100)];
+      if (mCursor) q.push(Query.cursorAfter(mCursor));
+      const page = await backoff(()=>teams.listMemberships(t.$id, q));
+      const list = page.memberships ?? [];
+      for (const m of list) {
+        appendNDJSON(mFile, {
+          $id: m.$id, teamId: t.$id, userId: m.userId,
           roles: Array.isArray(m.roles) ? m.roles : (m.roles ? [m.roles] : []),
-          joined: m.joined,              // timestamp
-          invited: m.invited,            // timestamp
-          confirm: m.confirm,            // boolean
-          userName: m.userName,
-          userEmail: m.userEmail,
-          // NOTE: secrets/invitation tokens are never exposed (by design)
-          $createdAt: m.$createdAt,
-          $updatedAt: m.$updatedAt,
-        };
-        appendNDJSON(mFile, record);
+          joined: m.joined, invited: m.invited, confirm: m.confirm,
+          userName: m.userName, userEmail: m.userEmail,
+          $createdAt: m.$createdAt, $updatedAt: m.$updatedAt,
+        });
         count++;
       }
-
-      // Some SDKs return .memberships; ensure termination condition:
-      const last = (page.memberships ?? []).at?.(-1);
-      if (!(page.memberships ?? []).length) break;
-      cursor = last?.$id;
+      if (!list.length) break;
+      mCursor = list.at(-1).$id;
     }
-    console.log(`Team ${t.name} (${t.$id}): memberships exported -> ${mFile}`);
+    console.log(`Team ${t.name} (${t.$id}): memberships ${count}`);
   }
-
-  console.log(`Teams exported: ${targetTeams.length} -> ${teamsFile}`);
 }
 
-/* ---------------------- DATABASE COLLECTIONS ---------------------- */
-async function exportCollections() {
-  let targets = COLLECTION_IDS;
-  if (!targets.length) {
-    console.log(`No COLLECTION_IDS provided; listing all collections in DB "${DATABASE_ID}"…`);
-    const all = await withBackoff(() => db.listCollections(DATABASE_ID));
-    targets = all.collections.map(c => c.$id);
-  }
+/* ---------- Database: Schema + Data ---------- */
+async function exportDatabase(){
+  console.log(`Exporting database "${DATABASE_ID}"…`);
+  const base = path.join(OUT_DIR, "database");
+  ensureDir(base);
 
+  // Fetch DB to get its name (if API doesn’t provide, we still record id)
+  // Appwrite may not expose getDatabase; we’ll at least record the id.
+  writeJson(path.join(base, "database.json"), { $id: DATABASE_ID, name: DATABASE_ID });
+
+  const cols = await backoff(()=>db.listCollections(DATABASE_ID));
   const limit = pLimit(CONCURRENCY);
-  await Promise.all(
-    targets.map(colId =>
-      limit(async () => {
-        const colDir = path.join(OUT_DIR, "db", colId);
-        ensureDir(colDir);
 
-        // Schema
-        const collection = await withBackoff(() => db.getCollection(DATABASE_ID, colId));
-        const attributes = await withBackoff(() => db.listAttributes(DATABASE_ID, colId));
-        fs.writeFileSync(
-          path.join(colDir, "schema.json"),
-          JSON.stringify({ collection, attributes }, null, 2)
-        );
+  // Write manifest early
+  writeJson(path.join(OUT_DIR, "manifest.json"), {
+    source: { projectId: PROJECT_ID, databaseId: DATABASE_ID, endpoint: ENDPOINT },
+    exportedAt: new Date().toISOString(),
+    collections: cols.collections.map(c => c.$id)
+  });
 
-        // Data
-        const dataFile = path.join(colDir, "data.ndjson");
-        if (fs.existsSync(dataFile)) fs.unlinkSync(dataFile);
+  await Promise.all(cols.collections.map(c => limit(async ()=>{
+    const colDir = path.join(base, "collections", c.$id);
+    ensureDir(colDir);
 
-        let cursor;
-        const pageSize = 100;
-        let count = 0;
+    const coll = await backoff(()=>db.getCollection(DATABASE_ID, c.$id));
+    writeJson(path.join(colDir, "collection.json"), coll);
 
-        while (true) {
-          const queries = [Query.limit(pageSize)];
-          if (cursor) queries.push(Query.cursorAfter(cursor));
-          const page = await withBackoff(() => db.listDocuments(DATABASE_ID, colId, queries));
+    const attrs = await backoff(()=>db.listAttributes(DATABASE_ID, c.$id));
+    writeJson(path.join(colDir, "attributes.json"), attrs.attributes ?? attrs);
 
-          for (const doc of page.documents) {
-            appendNDJSON(dataFile, doc); // keep $id/$permissions for potential restore
-            count++;
-          }
-          if (!page.documents.length) break;
-          cursor = page.documents.at(-1).$id;
-        }
-        console.log(`Collection ${colId}: ${count} docs -> ${dataFile}`);
-      })
-    )
-  );
+    // Indexes API is available on newer Appwrite versions; wrap safely
+    try {
+      const idx = await backoff(()=>db.listIndexes(DATABASE_ID, c.$id));
+      writeJson(path.join(colDir, "indexes.json"), idx.indexes ?? idx);
+    } catch {
+      writeJson(path.join(colDir, "indexes.json"), []); // fallback
+    }
+
+    const docsFile = path.join(colDir, "documents.ndjson");
+    if (fs.existsSync(docsFile)) fs.unlinkSync(docsFile);
+
+    let cursor; let count=0;
+    while (true) {
+      const q=[Query.limit(100)];
+      if (cursor) q.push(Query.cursorAfter(cursor));
+      const page = await backoff(()=>db.listDocuments(DATABASE_ID, c.$id, q));
+      for (const d of page.documents) {
+        appendNDJSON(docsFile, d); // keep $id + $permissions
+        count++;
+      }
+      if (!page.documents.length) break;
+      cursor = page.documents.at(-1).$id;
+    }
+    console.log(`Collection ${c.$id}: ${count} docs`);
+  })));
 }
 
-/* ---------------------- MAIN ---------------------- */
-(async () => {
+/* ---------- main ---------- */
+(async ()=>{
   try {
+    // Clean output dir to avoid stale files
+    fs.rmSync(OUT_DIR, { recursive:true, force:true });
     ensureDir(OUT_DIR);
+
     await exportUsers();
     await exportTeams();
-    await exportCollections();
+    await exportDatabase();
+
     console.log("✅ Export complete.");
   } catch (e) {
-    console.error("❌ Export aborted.");
+    console.error("❌ Export failed:", e.message);
     process.exit(1);
   }
 })();

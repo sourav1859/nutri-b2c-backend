@@ -1,0 +1,12 @@
+{
+  "source": {
+    "projectId": "689f57a3002546ca4c67",
+    "databaseId": "nutrition_db",
+    "endpoint": "https://nyc.cloud.appwrite.io/v1"
+  },
+  "exportedAt": "2025-10-08T19:36:33.850Z",
+  "collections": [
+    "profiles",
+    "health_profiles"
+  ]
+}
