@@ -7,7 +7,7 @@ const router = Router();
 
 router.get("/", authMiddleware, rateLimitMiddleware, async (req, res, next) => {
   try {
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 200;
     const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
     
     const results = await getPersonalizedFeed(req.user.effectiveUserId, limit, offset);
