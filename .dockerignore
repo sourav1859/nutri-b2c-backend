@@ -1,0 +1,13 @@
+node_modules
+dist
+.vercel
+.local
+.git
+.gitignore
+Dockerfile*
+README.md
+**/.DS_Store
+**/Thumbs.db
+.env*
+sample_1000_products.csv
+
